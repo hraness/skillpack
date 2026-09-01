@@ -1,0 +1,14 @@
+{
+  "name": "skillpack-admin",
+  "version": "0.2.0",
+  "description": "Optional administration for this Hraness Agent Skills distribution; not an HRA product workflow.",
+  "author": {
+    "name": "Hraness contributors"
+  },
+  "homepage": "https://github.com/hraness/skillpack/tree/main/plugins/skillpack-admin",
+  "repository": "https://github.com/hraness/skillpack",
+  "license": "MIT",
+  "keywords": ["agent-skills", "audit", "portability", "provenance"],
+  "logo": "./assets/logo.png",
+  "skills": "./skills/"
+}

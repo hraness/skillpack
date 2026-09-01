@@ -1,6 +1,6 @@
 {
   "name": "hraness-engineering",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MECE engineering analysis, verification, testing, performance, documentation, and refactoring workflows for Codex.",
   "author": {
     "name": "Hraness",
@@ -18,9 +18,9 @@
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Hraness Engineering",
-    "shortDescription": "Use focused engineering workflows without routing overlap.",
-    "longDescription": "Maps features, explains code and rationale, assesses change impact, compares approaches, builds and maintains app verifiers, engineers tests, investigates performance, maintains docs, and performs behavior-preserving refactors.",
+    "displayName": "Repository Engineering by Hraness",
+    "shortDescription": "Focused workflows for repository engineering.",
+    "longDescription": "General-purpose repository workflows for feature mapping, code explanation, rationale, change impact, approach comparison, app verification, tests, performance, documentation, and behavior-preserving refactors.",
     "developerName": "Hraness",
     "category": "Productivity",
     "capabilities": [
@@ -34,6 +34,12 @@
       "Map this repository's user-visible features and proof paths.",
       "Create a safe verifier for this application.",
       "Assess the blast radius of this proposed change."
-    ]
+    ],
+    "websiteURL": "https://github.com/hraness/skillpack/tree/main/plugins/hraness-engineering",
+    "privacyPolicyURL": "https://github.com/hraness/skillpack/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/hraness/skillpack/blob/main/TERMS.md",
+    "brandColor": "#1428BF",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png"
   }
 }

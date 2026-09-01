@@ -5,6 +5,7 @@ description: >-
   self-protective question and returns the harder question worth asking. Use
   only when the user invokes $question-forge. Do not use it to answer the
   question or perform repository coding, delivery, or operations.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Question Forge

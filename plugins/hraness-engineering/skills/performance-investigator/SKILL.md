@@ -1,6 +1,7 @@
 ---
 name: performance-investigator
 description: Diagnose and improve a measured performance problem using controlled baselines, profiling, hypotheses, and before/after evidence. Use for latency, throughput, CPU, memory, startup, rendering, or scaling regressions; do not use for unmeasured optimization, general refactoring, or infrastructure capacity planning.
+license: MIT
 ---
 
 # Performance investigator

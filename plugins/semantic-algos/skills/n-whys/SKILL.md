@@ -5,6 +5,7 @@ description: >-
   conceptual, motivational, or philosophical explanations. Use only when the
   user invokes $n-whys; depth 5 replaces the former five-whys preset. Do not
   use for repository root-cause debugging, coding, delivery, or operations.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # N Whys

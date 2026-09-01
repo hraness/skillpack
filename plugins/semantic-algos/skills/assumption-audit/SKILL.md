@@ -5,6 +5,7 @@ description: >-
   capability, people, continuity, and definitional assumptions in a claim or
   plan. Use only when the user invokes $assumption-audit. Do not route coding,
   repository review, delivery, or operations through this skill.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Assumption Audit

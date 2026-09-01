@@ -6,6 +6,7 @@ description: >-
   executing it. Use only when the user invokes $sem-compile. Do not use it for
   repository coding, delivery, orchestration, shell, messaging, or other
   external effects.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Sem Compile

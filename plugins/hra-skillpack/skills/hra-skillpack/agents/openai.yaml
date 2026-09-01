@@ -1,6 +1,0 @@
-interface:
-  display_name: "HRA Skillpack"
-  short_description: "Audit and safely adopt Hraness skills"
-  default_prompt: "Use $hra-skillpack to audit this pack without changing files."
-policy:
-  allow_implicit_invocation: true

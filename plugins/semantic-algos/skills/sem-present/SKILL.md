@@ -5,6 +5,7 @@ description: >-
   validated view manifest without executing, resuming, or rendering the run.
   Use only when the user invokes $sem-present with an exact run directory. Do
   not use for repository visualization, coding, delivery, or operations.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Sem Present

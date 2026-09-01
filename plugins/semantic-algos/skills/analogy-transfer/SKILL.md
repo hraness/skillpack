@@ -5,6 +5,7 @@ description: >-
   structurally similar domains and checks where each analogy breaks. Use only
   when the user invokes $analogy-transfer. Do not use for ordinary repository
   analysis, coding, delivery, or orchestration.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Analogy Transfer

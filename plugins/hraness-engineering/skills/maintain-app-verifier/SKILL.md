@@ -1,6 +1,7 @@
 ---
 name: maintain-app-verifier
 description: Audit and correct drift in an existing project-local application verifier, its driver, and references/features map using source and live evidence. Use when a verify-app skill already exists; do not use to create one, change product code, or treat a product regression as documentation drift.
+license: MIT
 ---
 
 # Maintain an application verifier

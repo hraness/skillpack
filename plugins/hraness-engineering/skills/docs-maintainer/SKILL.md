@@ -1,6 +1,7 @@
 ---
 name: docs-maintainer
 description: Create or update repository documentation so commands, behavior, examples, navigation, and operational guidance match authoritative current sources. Use for README, guide, reference, runbook, or release-documentation maintenance; do not use for general copywriting, historical rationale, or product-code changes.
+license: MIT
 ---
 
 # Documentation maintainer

@@ -1,8 +1,8 @@
 {
   "name": "hraness-skillpack",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Portable Agent Skills distribution and audit tooling for Hraness engineering workflows.",
+  "description": "Portable Agent Skills for repository engineering, phased delivery, and explicit semantic transforms.",
   "license": "MIT",
   "type": "module",
   "packageManager": "bun@1.3.14",
@@ -13,8 +13,8 @@
     "check": "bun run validate && bun test",
     "validate": "bun scripts/validate.mjs",
     "test": "bun test",
-    "audit": "bun plugins/hra-skillpack/scripts/audit.mjs --root .",
-    "audit:machine": "bun plugins/hra-skillpack/scripts/machine-audit.mjs --source .",
-    "adopt:dry-run": "bun plugins/hra-skillpack/scripts/adopt.mjs --source . --target ./tmp/adopted-skills --all"
+    "audit": "bun plugins/skillpack-admin/scripts/audit.mjs --root .",
+    "audit:machine": "bun plugins/skillpack-admin/scripts/machine-audit.mjs --source .",
+    "adopt:dry-run": "bun plugins/skillpack-admin/scripts/adopt.mjs --source . --target ./tmp/adopted-skills --all"
   }
 }

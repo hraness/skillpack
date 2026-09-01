@@ -6,6 +6,7 @@ description: >-
   Use when the user explicitly asks for delegated or multi-agent execution of
   a phase plan. Do not use for ordinary single-owner coding, plan authoring,
   semantic reasoning, or as a replacement for HRA scheduling and repo gates.
+license: MIT
 ---
 
 # Phase Orchestrator

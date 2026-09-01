@@ -1,6 +1,7 @@
 ---
 name: test-engineer
 description: Design, implement, or repair focused automated tests that reproduce behavior and provide reliable regression evidence at the right layer. Use for test strategy and test-code work; do not use to create an application-driving skill, perform performance tuning, or change product behavior beyond an explicitly requested fix.
+license: MIT
 ---
 
 # Test engineer

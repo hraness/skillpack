@@ -1,6 +1,7 @@
 ---
 name: assess-change-impact
 description: Assess the direct and indirect blast radius of a proposed or existing code change, including callers, contracts, state, operations, and validation needs. Use when preparing to ship or when a small diff may have hidden effects; do not use to generate competing designs, explain an unchanged subsystem, or implement the change.
+license: MIT
 ---
 
 # Assess change impact

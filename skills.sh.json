@@ -1,0 +1,58 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "Repository Engineering",
+      "description": "General-purpose repository understanding, verification, tests, performance, docs, and refactoring.",
+      "skills": [
+        "repository-feature-map",
+        "semantic-code-analysis",
+        "reconstruct-rationale",
+        "assess-change-impact",
+        "compare-approaches",
+        "create-app-verifier",
+        "maintain-app-verifier",
+        "test-engineer",
+        "performance-investigator",
+        "docs-maintainer",
+        "refactor-maintainer"
+      ]
+    },
+    {
+      "title": "Phased Delivery",
+      "description": "Plan and execute explicitly multi-phase repository work with independent review.",
+      "skills": ["write-phase-plan", "phase-orchestrator"]
+    },
+    {
+      "title": "Semantic Algorithms",
+      "description": "Explicit semantic transforms and inspectable Sem programs by Rob Cheung.",
+      "skills": [
+        "analogy-transfer",
+        "assumption-audit",
+        "counterfactual",
+        "decision-matrix",
+        "dp-solve",
+        "explanation-ladder",
+        "first-principles-thinking",
+        "golden-circle",
+        "inversion",
+        "joke",
+        "ladder-of-abstraction",
+        "lyric",
+        "n-whys",
+        "nietzche-ladder",
+        "parable",
+        "question-forge",
+        "sem-compile",
+        "sem-present",
+        "sem-run"
+      ]
+    },
+    {
+      "title": "Distribution Administration",
+      "description": "Optional lifecycle tooling for this repository; unrelated to using the HRA product.",
+      "skills": ["skillpack-admin"]
+    }
+  ]
+}

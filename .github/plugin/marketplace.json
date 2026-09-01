@@ -1,0 +1,40 @@
+{
+  "name": "hraness-skillpack",
+  "owner": {
+    "name": "Hraness"
+  },
+  "metadata": {
+    "description": "Portable repository engineering, phased delivery, semantic algorithms, and optional distribution administration.",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    {
+      "name": "hraness-engineering",
+      "source": "plugins/hraness-engineering",
+      "description": "Bounded engineering analysis and repository verification workflows.",
+      "version": "0.2.0",
+      "license": "MIT"
+    },
+    {
+      "name": "code-orchestrator",
+      "source": "plugins/code-orchestrator",
+      "description": "Multi-phase repository delivery after an explicit plan exists.",
+      "version": "0.2.0",
+      "license": "MIT"
+    },
+    {
+      "name": "semantic-algos",
+      "source": "plugins/semantic-algos",
+      "description": "Explicit semantic and reasoning transforms by Rob Cheung, included with permission.",
+      "version": "0.2.0",
+      "license": "LicenseRef-Permission-Rob-Cheung"
+    },
+    {
+      "name": "skillpack-admin",
+      "source": "plugins/skillpack-admin",
+      "description": "Optional administration for this Hraness Agent Skills distribution.",
+      "version": "0.2.0",
+      "license": "MIT"
+    }
+  ]
+}

@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { main as audit } from "../plugins/hra-skillpack/skills/hra-skillpack/scripts/audit.mjs";
-import { main as adopt } from "../plugins/hra-skillpack/skills/hra-skillpack/scripts/adopt.mjs";
-import { main as machineAudit } from "../plugins/hra-skillpack/skills/hra-skillpack/scripts/machine-audit.mjs";
+import { main as audit } from "../plugins/skillpack-admin/skills/skillpack-admin/scripts/audit.mjs";
+import { main as adopt } from "../plugins/skillpack-admin/skills/skillpack-admin/scripts/adopt.mjs";
+import { main as machineAudit } from "../plugins/skillpack-admin/skills/skillpack-admin/scripts/machine-audit.mjs";
 
 const roots = [];
 afterEach(async () => {
@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 async function target() {
-  const root = await mkdtemp(join(tmpdir(), "hra-skillpack-canary-"));
+  const root = await mkdtemp(join(tmpdir(), "skillpack-admin-canary-"));
   roots.push(root);
   return join(root, "skills");
 }
@@ -49,7 +49,7 @@ describe("offline adoption canary", () => {
   });
 
   test("machine audit reports repository-local collisions without writing", async () => {
-    const repositories = await mkdtemp(join(tmpdir(), "hra-skillpack-repositories-"));
+    const repositories = await mkdtemp(join(tmpdir(), "skillpack-admin-repositories-"));
     roots.push(repositories);
     const localSkill = join(repositories, "sample/.agents/skills/canary");
     await mkdir(join(repositories, "sample/.git"), { recursive: true });
@@ -66,7 +66,7 @@ describe("offline adoption canary", () => {
   test("repair refuses a symbolic link inside the managed destination", async () => {
     const destination = await target();
     await adopt(["--source", source, "--target", destination, "--all", "--apply"]);
-    const outside = await mkdtemp(join(tmpdir(), "hra-skillpack-outside-"));
+    const outside = await mkdtemp(join(tmpdir(), "skillpack-admin-outside-"));
     roots.push(outside);
     await mkdir(join(destination, "canary/nested"), { recursive: true });
     await symlink(outside, join(destination, "canary/nested/redirect"));
@@ -75,7 +75,7 @@ describe("offline adoption canary", () => {
 
   test("repair refuses a skill destination that is itself a symbolic link", async () => {
     const destination = await target();
-    const outside = await mkdtemp(join(tmpdir(), "hra-skillpack-outside-skill-"));
+    const outside = await mkdtemp(join(tmpdir(), "skillpack-admin-outside-skill-"));
     roots.push(outside);
     await mkdir(destination, { recursive: true });
     await symlink(outside, join(destination, "canary"));

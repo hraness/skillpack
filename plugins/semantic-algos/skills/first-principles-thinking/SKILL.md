@@ -5,6 +5,7 @@ description: >-
   constraints after removing inherited defaults and analogies. Use only when
   the user invokes $first-principles-thinking. Do not route ordinary coding,
   repository analysis, delivery, or operations through this skill.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # First Principles Thinking

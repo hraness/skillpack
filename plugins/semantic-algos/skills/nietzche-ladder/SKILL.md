@@ -5,6 +5,7 @@ description: >-
   and Child: inheritance, refusal, and creation. Use only when the user invokes
   $nietzche-ladder. Do not route coding, repository delivery, or operations
   through this semantic form.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Nietzsche Ladder

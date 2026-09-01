@@ -23,18 +23,20 @@ or overwrites none of them.
 Reproduce the read-only audit on any machine with explicit roots:
 
 ```sh
-bun plugins/hra-skillpack/scripts/machine-audit.mjs \
+bun plugins/skillpack-admin/scripts/machine-audit.mjs \
   --source /reviewed/skillpack \
   --repos-root /explicit/repositories/root
 ```
 
 ## Adoption sequence
 
-1. Add the public `hraness/skillpack` marketplace to Codex and install the four
-   versioned plugins. Import the same repository as a Cursor team marketplace,
-   or test its plugins from Cursor's documented local-plugin directory.
+1. Add the public `hraness/skillpack` marketplace to Codex and install only the
+   versioned plugins needed on that host. Before public Cursor approval, use a
+   Teams/Enterprise team import or explicitly reviewed local plugin links; retain
+   any authorized direct semantic setup until `semantic-algos` has a
+   Cursor-accepted permissive license.
 2. Start a fresh agent task so the host reloads plugin metadata.
-3. Run `$hra-skillpack` in audit mode. Record marketplace revision, installed
+3. Run `$skillpack-admin` in audit mode. Record marketplace revision, installed
    plugin versions, and repository-local name collisions.
 4. Prefer namespaced shared skills for new work. Keep repository copies in
    place until their repository-specific instructions are classified.

@@ -1,11 +1,12 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "semantic-algos",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Explicit semantic reasoning operators and inspectable Sem programs by Rob Cheung, adapted with permission.",
   "author": {
     "name": "Rob Cheung and Hraness"
   },
   "homepage": "https://github.com/hraness/skillpack/tree/main/plugins/semantic-algos",
-  "repository": "https://github.com/hraness/skillpack"
+  "repository": "https://github.com/hraness/skillpack",
+  "license": "LicenseRef-Permission-Rob-Cheung"
 }

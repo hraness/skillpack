@@ -5,6 +5,7 @@ description: >-
   original compact joke with a compatible frame switch. Use only when the user
   invokes $joke. Do not route ordinary writing, coding, delivery, or operations
   through this skill.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Joke

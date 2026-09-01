@@ -5,6 +5,7 @@ description: >-
   parable that embodies its tension without stating or settling it. Use only
   when the user invokes $parable. Do not route ordinary writing, coding,
   delivery, or operations through this skill.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Parable

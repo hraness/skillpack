@@ -1,6 +1,7 @@
 ---
 name: compare-approaches
 description: Compare viable technical approaches against explicit constraints and evidence, producing a decision-ready recommendation. Use when a real architecture or implementation choice remains open; do not use when the answer is observable from the existing system, when one approach is already required, or to implement the winner.
+license: MIT
 ---
 
 # Compare approaches

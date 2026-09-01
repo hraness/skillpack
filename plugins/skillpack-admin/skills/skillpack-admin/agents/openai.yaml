@@ -1,0 +1,6 @@
+interface:
+  display_name: "Skillpack Admin"
+  short_description: "Audit and repair this skills distribution"
+  default_prompt: "Use $skillpack-admin to audit this distribution without changing files."
+policy:
+  allow_implicit_invocation: true

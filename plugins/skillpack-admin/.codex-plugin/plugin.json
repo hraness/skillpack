@@ -1,0 +1,33 @@
+{
+  "name": "skillpack-admin",
+  "version": "0.2.0",
+  "description": "Optional audit, adoption, drift, and repair tooling for the Hraness Agent Skills distribution.",
+  "author": {
+    "name": "Hraness contributors",
+    "url": "https://github.com/hraness"
+  },
+  "homepage": "https://github.com/hraness/skillpack/tree/main/plugins/skillpack-admin",
+  "repository": "https://github.com/hraness/skillpack",
+  "license": "MIT",
+  "keywords": ["agent-skills", "audit", "portability", "provenance"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Hraness Skillpack Admin",
+    "shortDescription": "Maintain this skills distribution safely.",
+    "longDescription": "Optional read-only audits, explicit adoption previews, drift detection, and backup-first repair for this distribution. It does not operate the HRA product.",
+    "developerName": "Hraness contributors",
+    "category": "Productivity",
+    "capabilities": ["Pack audit", "Machine adoption audit", "Backup-first repair"],
+    "defaultPrompt": [
+      "Audit this Hraness Skillpack without changing files.",
+      "Preview adopting a skill into an explicit directory.",
+      "Explain detected skillpack drift and safe repair."
+    ],
+    "websiteURL": "https://github.com/hraness/skillpack",
+    "privacyPolicyURL": "https://github.com/hraness/skillpack/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/hraness/skillpack/blob/main/TERMS.md",
+    "brandColor": "#1428BF",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png"
+  }
+}

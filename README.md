@@ -1,32 +1,94 @@
-# Hraness Skillpack
+# Hraness Agent Skills
 
-Hraness Skillpack is a portable, source-auditable distribution of Agent Skills
-for bounded engineering analysis, explicit semantic transforms, planned
-multi-phase delivery, and management of the pack itself. Agent Skills
-directories are canonical; Codex and Cursor metadata are intentionally thin
-adapters over the same `SKILL.md` sources.
+[![skills.sh](https://skills.sh/b/hraness/skillpack)](https://skills.sh/hraness/skillpack)
 
-## Boundaries
+Hraness Agent Skills is a public, source-auditable collection of general-purpose
+Agent Skills. **Hraness is the publisher, not a product dependency.** These
+skills do not require or operate the HRA application, CLI, or service.
 
-| Skill | Owns | Does not own |
+Agent Skills directories are canonical. Codex, Cursor, Agent Plugins, and
+registry metadata are thin distribution adapters over the same `SKILL.md`
+sources.
+
+## Choose what to install
+
+### Public capability packs
+
+| Plugin | Use it for | Do not use it for |
 | --- | --- | --- |
-| `hraness-engineering` | Repository analysis, verification, tests, performance, documentation, and behavior-preserving refactors | Delivery orchestration or implicit semantic routing |
-| `code-orchestrator` | Multi-phase repository delivery after a phase plan exists | Host scheduling, CI policy, merge policy, or ordinary one-step coding |
-| `semantic-algos` | Explicit semantic and reasoning transforms | General coding, repository analysis, or delivery routing |
-| `hra-skillpack` | Install, audit, adoption, drift detection, and repair | Product coding or coding-task routing |
+| `hraness-engineering` | Understanding, testing, verifying, documenting, measuring, or safely refactoring a repository | Multi-phase delivery or generic semantic transforms |
+| `code-orchestrator` | Writing or executing an explicitly multi-phase delivery plan with bounded workers and independent review | Host scheduling, CI policy, or ordinary one-owner coding |
+| `semantic-algos` | Explicitly requested semantic and reasoning transforms from Rob Cheung's work | Implicit coding-task routing or repository delivery |
 
-The pack never supplies cloud execution, a second compute scheduler, or a way
-around repository gates. A skill is instructions, not proof: target-repository
-commands, artifacts, and gates remain authoritative.
+### Optional distribution administration
 
-The structure follows the [Agent Skills specification](https://agentskills.io/specification),
-[OpenAI's skill guidance](https://learn.chatgpt.com/docs/build-skills), and
-[Cursor's skill](https://prod.cursor.com/docs/skills) and
-[plugin](https://prod.cursor.com/docs/plugins) formats. The compact engineering
-set adapts selected ideas from [PStack](https://github.com/cursor/plugins/tree/main/pstack)
-instead of importing its full routing surface. The separate optional packs
-retain provenance to [Code Orchestrator](https://github.com/kousun12/code-orchestrator)
-and [Rob Cheung's Semantic Algos](https://github.com/kousun12/semantic-algos).
+`skillpack-admin` audits, adopts, checks drift in, and repairs installations of
+this repository. Most people do not need it for ordinary engineering work. It
+is not a skill for using HRA.
+
+Machine resource scheduling, browser lanes, validation receipts, and worktree
+custody remain the separate responsibility of `hra-local-efficiency`.
+
+## Install
+
+### Any host supported by skills.sh
+
+```sh
+npx skills add hraness/skillpack
+```
+
+The skills.sh repository page groups all skills by capability pack. Review the
+source before installing; this repository never treats registry presence as a
+security endorsement.
+
+### Codex
+
+Install the reviewed v0.2.0 release, select only the plugins you need, and then
+start a fresh Codex task:
+
+```sh
+codex plugin marketplace add hraness/skillpack --ref v0.2.0
+codex plugin add hraness-engineering@hraness-skillpack
+codex plugin add code-orchestrator@hraness-skillpack
+codex plugin add semantic-algos@hraness-skillpack
+
+# Optional distribution tooling
+codex plugin add skillpack-admin@hraness-skillpack
+```
+
+### Cursor
+
+Before public Marketplace approval, individual developers can clone this
+repository and copy or symlink a selected `plugins/<name>` directory into
+`$HOME/.cursor/plugins/local`, then reload Cursor. Teams and Enterprise admins can
+instead import the repository as a team marketplace. After Cursor review, the
+three MIT-licensed plugins will be directly discoverable in Cursor's public
+Marketplace: `hraness-engineering`, `code-orchestrator`, and optional
+`skillpack-admin`.
+
+`semantic-algos` is not in the Cursor marketplace manifest because its
+permission grant is not a recognized permissive open-source license. Its
+source and explicit Cursor command adapters remain in this repository for
+authorized direct use.
+
+### Agent Skills-compatible hosts
+
+Each `plugins/<plugin>/skills/<skill>/` directory is independently portable.
+The root `skills.sh.json` provides public grouping metadata without changing
+skill behavior.
+
+### GitHub Copilot CLI and compatible Agent Plugin hosts
+
+This repository is also a directly addable Copilot plugin marketplace:
+
+```sh
+copilot plugin marketplace add hraness/skillpack
+copilot plugin marketplace browse hraness-skillpack
+copilot plugin install hraness-engineering@hraness-skillpack
+```
+
+The portable root `plugin.json` files are the canonical Agent Plugins
+manifests; `.github/plugin/marketplace.json` is only the host adapter.
 
 ## Validate from source
 
@@ -37,94 +99,48 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-The check validates skill identity and uniqueness, routing ownership,
-descriptions, references, manifests, provenance, portability, and placeholders;
-then it runs offline canary tests for audit, adoption, drift, and repair.
+The check validates skill identity, routing ownership, references, manifests,
+provenance, registry metadata, portability, and offline administration
+canaries.
 
-## Audit without changing anything
+## Audit or adopt safely
 
-```sh
-bun plugins/hra-skillpack/scripts/audit.mjs --root .
-```
-
-Audit reports discovered skills and, when `--target` is supplied, compares an
-installed skills directory against source content hashes. It never writes.
-
-## Preview or apply adoption
-
-The destination is always explicit. Preview is the default:
+Audit is read-only:
 
 ```sh
-bun plugins/hra-skillpack/scripts/adopt.mjs \
-  --source . --target ./local-agent-skills --skill hra-skillpack
+bun plugins/skillpack-admin/scripts/audit.mjs --root .
 ```
 
-Add `--apply` to copy a skill into an unused destination. Existing differing
-skills are refused. To repair a known pack-managed skill, add both `--repair`
-and `--apply`; the helper creates a sibling backup before overwriting known
-source files and never deletes extra destination files.
-
-To preview every discoverable skill, replace `--skill hra-skillpack` with
-`--all`. `sync.mjs` is an equivalent all-skills entry point intended for drift
-repair. No helper discovers or writes a host-specific home directory.
-
-## Host marketplaces
-
-- Codex reads `.agents/plugins/marketplace.json` and each plugin's
-  `.codex-plugin/plugin.json`.
-- Cursor reads `.cursor-plugin/marketplace.json`. Engineering, orchestration,
-  and lifecycle plugins point at the canonical skill directories. Semantic
-  operators use thin slash-command adapters because Cursor and Codex encode
-  explicit-only invocation differently; the procedure remains canonical under
-  `plugins/semantic-algos/skills/`.
-- Other Agent Skills-compatible hosts can consume the individual directories
-  below `plugins/*/skills/`.
-
-### Codex bootstrap
-
-Install the reviewed v0.1.0 release, then start a fresh Codex task so its skill
-catalog is rebuilt:
+Adoption previews by default and always requires an explicit destination:
 
 ```sh
-codex plugin marketplace add hraness/skillpack --ref v0.1.0
-codex plugin add hra-skillpack@hraness-skillpack
-codex plugin add hraness-engineering@hraness-skillpack
-codex plugin add code-orchestrator@hraness-skillpack
-codex plugin add semantic-algos@hraness-skillpack
-codex plugin list --json
+bun plugins/skillpack-admin/scripts/adopt.mjs \
+  --source . --target ./local-agent-skills --skill skillpack-admin
 ```
 
-The first two plugins are the default engineering baseline. Code Orchestrator
-is for explicitly phased work; Semantic Algos is explicit-only and may be
-installed without adding its operators to ordinary automatic routing.
+Add `--apply` only after reviewing the plan. Repair requires both `--repair`
+and `--apply`, creates a sibling backup, and never deletes extra destination
+files.
 
-### Cursor bootstrap
+## Provenance and licensing
 
-Import `https://github.com/hraness/skillpack` as a Cursor team marketplace, or
-copy or symlink individual `plugins/<name>` directories into Cursor's
-documented local-plugin directory for a canary. Reload Cursor after a local
-install. Engineering, orchestration, and lifecycle workflows appear as skills;
-semantic operators appear only as `/skill-name` commands.
+The compact engineering set adapts selected ideas from
+[PStack](https://github.com/cursor/plugins/tree/main/pstack) rather than
+importing its full routing surface. The separate optional packs retain
+provenance to [Code Orchestrator](https://github.com/kousun12/code-orchestrator)
+and [Rob Cheung's Semantic Algos](https://github.com/kousun12/semantic-algos).
+Rob Cheung's semantic material is included with attribution and permission; it
+is not represented as MIT-licensed.
 
-Host commands and local-plugin locations can change. Confirm them against the
-current [Codex plugin documentation](https://learn.chatgpt.com/docs/build-plugins)
-or [Cursor plugin documentation](https://prod.cursor.com/docs/plugins) and
-inspect the installed marketplace before enabling a newer release.
+`catalog/catalog.json` is the discoverable skill inventory,
+`catalog/routing-fixtures.json` proves pairwise ownership, and
+`catalog/provenance.json` plus `sources.lock.json` pin adapted sources to exact
+revisions. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
+[PRIVACY.md](PRIVACY.md), [TERMS.md](TERMS.md), and
+[SECURITY.md](SECURITY.md) before redistributing or adapting the pack.
 
-## Provenance and release integrity
-
-`catalog/catalog.json` is the discoverable skill inventory.
-`catalog/routing-fixtures.json` specifies positive, negative, and pairwise
-ownership examples. `catalog/provenance.json` classifies every skill as
-original or adapted. Adapted content is rejected unless `sources.lock.json`
-pins an immutable upstream revision and local paths.
-
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
-[SECURITY.md](SECURITY.md), and [CONTRIBUTING.md](CONTRIBUTING.md) before
-importing upstream material or changing routing boundaries.
-
-The staged machine and repository migration is documented in
-[docs/rollout.md](docs/rollout.md). The initial local sample found 48 drifted
-name collisions across 27 repositories, so the safe rollout installs the
-shared marketplace first and retires repository copies only through their own
-reviewed paths.
+Registry and marketplace publication details are maintained in
+[docs/distribution.md](docs/distribution.md). The staged retirement of older
+repository-local copies is documented in [docs/rollout.md](docs/rollout.md).
+Existing v0.1 installations should follow
+[docs/migration-v0.2.md](docs/migration-v0.2.md).

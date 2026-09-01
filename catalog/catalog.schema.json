@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Hraness Skillpack catalog",
+  "title": "Hraness Agent Skills catalog",
   "type": "object",
   "required": ["schemaVersion", "skills"],
   "properties": {

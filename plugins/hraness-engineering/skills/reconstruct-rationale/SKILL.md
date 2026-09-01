@@ -1,6 +1,7 @@
 ---
 name: reconstruct-rationale
 description: Reconstruct why code, an API, or an architecture reached its current shape from version history and other authorized records, with calibrated confidence. Use for design-history and intent questions; do not use for a current-behavior walkthrough, speculative justification, or a change recommendation.
+license: MIT
 ---
 
 # Reconstruct rationale

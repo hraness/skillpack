@@ -1,6 +1,7 @@
 ---
 name: refactor-maintainer
 description: Perform behavior-preserving structural changes with an explicit invariant, caller migration, deletion of obsolete paths, and focused plus repository-required validation. Use for refactors and internal migrations; do not use for feature work, intentional behavior changes, speculative cleanup, or performance changes without measurement.
+license: MIT
 ---
 
 # Refactor maintainer

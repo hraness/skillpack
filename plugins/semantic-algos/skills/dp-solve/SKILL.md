@@ -5,6 +5,7 @@ description: >-
   subproblems whose answers can be reused and synthesized. Use only when the
   user invokes $dp-solve. This is a reasoning operator, not a request to write
   dynamic-programming code or perform repository delivery.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # DP Solve
