@@ -5,6 +5,7 @@ description: >-
   Why, How, and What, followed by a consistency check. Use only when the user
   invokes $golden-circle. Do not use for ordinary product implementation,
   repository delivery, or operations.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Golden Circle

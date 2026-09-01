@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/hraness/skillpack",
+  "marketplace": ".cursor-plugin/marketplace.json",
+  "publisher": "Hraness",
+  "support": "https://github.com/hraness/skillpack/issues",
+  "plugins": [
+    "hraness-engineering",
+    "code-orchestrator",
+    "skillpack-admin"
+  ],
+  "excluded": [
+    {
+      "plugin": "semantic-algos",
+      "reason": "Permission and attribution are recorded, but Cursor public Marketplace submission requires a recognized permissive open-source license."
+    }
+  ]
+}

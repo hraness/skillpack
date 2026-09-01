@@ -4,6 +4,7 @@ description: >-
   Explicitly invoked semantic inversion that derives safeguards by first
   asking how to guarantee failure. Use only when the user invokes $inversion.
   Do not use for repository, delivery, or operational changes.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Inversion

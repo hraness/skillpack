@@ -5,6 +5,7 @@ description: >-
   weighted criteria, reasoned scores, sensitivity, and a gut check. Use only
   when the user invokes $decision-matrix. Do not use to make repository,
   delivery, or operational changes.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Decision Matrix

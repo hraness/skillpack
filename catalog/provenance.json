@@ -2,7 +2,7 @@
   "$schema": "./provenance.schema.json",
   "schemaVersion": 1,
   "skills": [
-    { "name": "hra-skillpack", "classification": "original", "localPaths": ["plugins/hra-skillpack"] },
+    { "name": "skillpack-admin", "classification": "original", "localPaths": ["plugins/skillpack-admin"] },
     { "name": "assess-change-impact", "classification": "adapted", "sourceIds": ["pstack"], "localPaths": ["plugins/hraness-engineering/skills/assess-change-impact"] },
     { "name": "compare-approaches", "classification": "adapted", "sourceIds": ["pstack"], "localPaths": ["plugins/hraness-engineering/skills/compare-approaches"] },
     { "name": "create-app-verifier", "classification": "adapted", "sourceIds": ["pstack"], "localPaths": ["plugins/hraness-engineering/skills/create-app-verifier"] },

@@ -6,6 +6,7 @@ description: >-
   validation, and status logging. Use when the user asks for a phased plan or
   a plan consumable by phase-orchestrator. Do not use to execute the plan or
   replace a repository's own planning and delivery rules.
+license: MIT
 ---
 
 # Write Phase Plan

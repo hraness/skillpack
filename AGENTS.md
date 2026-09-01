@@ -1,4 +1,4 @@
-# Hraness Skillpack contributor instructions
+# Hraness Agent Skills contributor instructions
 
 This repository is a public, cross-agent skills distribution for Codex, Cursor, and other Agent Skills-compatible hosts.
 
@@ -8,7 +8,7 @@ This repository is a public, cross-agent skills distribution for Codex, Cursor, 
 - `hraness-engineering` owns bounded engineering analysis, verification, testing, performance, documentation, and behavior-preserving refactors.
 - `code-orchestrator` owns multi-phase repository delivery after a phase plan exists. It must not replace the HRA host scheduler, repository gates, CI, or merge policy.
 - `semantic-algos` owns explicit semantic or reasoning transforms. It must not implicitly route ordinary coding, delivery, or repository-analysis work.
-- `hra-skillpack` owns installation, auditing, adoption, drift detection, and repair of this pack. It does not own product coding tasks.
+- `skillpack-admin` owns installation-state auditing, adoption, drift detection, and repair of this distribution. It is not an HRA product skill and does not own product coding tasks.
 - Preserve useful agent fan-out. Do not introduce a second compute scheduler or cap agents merely to reduce count.
 - Do not add cloud execution or cloud optimization to this repository.
 

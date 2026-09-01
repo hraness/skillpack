@@ -1,6 +1,7 @@
 ---
 name: semantic-code-analysis
 description: Explain how a code path or subsystem behaves now by tracing entry points, data flow, state, boundaries, failures, and verification evidence. Use for current-behavior questions; do not use to reconstruct historical intent, estimate change blast radius, or implement a fix.
+license: MIT
 ---
 
 # Semantic code analysis

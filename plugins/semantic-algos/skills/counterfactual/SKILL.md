@@ -5,6 +5,7 @@ description: >-
   consequences, and separates robust implications from speculation. Use only
   when the user invokes $counterfactual. Do not use for future planning,
   repository coding, delivery, or operational changes.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Counterfactual

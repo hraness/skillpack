@@ -5,6 +5,7 @@ description: >-
   into an original poem or song lyric whose meaning emerges through image,
   sound, voice, and recurrence. Use only when the user invokes $lyric. Do not
   route ordinary writing, coding, delivery, or operations through this skill.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Lyric

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "skillpack-admin",
+  "version": "0.2.0",
+  "description": "Optional audit, adoption, drift, and repair tooling for the Hraness Agent Skills distribution.",
+  "author": {
+    "name": "Hraness contributors"
+  },
+  "homepage": "https://github.com/hraness/skillpack/tree/main/plugins/skillpack-admin",
+  "repository": "https://github.com/hraness/skillpack",
+  "license": "MIT"
+}

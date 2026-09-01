@@ -1,13 +1,16 @@
 ---
-name: hra-skillpack
-description: Use when installing, auditing, adopting, checking drift in, or safely repairing this Hraness Skillpack. Do not use for product coding, coding-task routing, repository delivery, compute scheduling, or cloud execution.
+name: skillpack-admin
+description: Use when auditing, adopting, checking drift in, or safely repairing this Hraness Agent Skills distribution. Do not use for the HRA product, product coding, repository delivery, compute scheduling, or cloud execution.
 license: MIT
 metadata:
   owner: hraness
   scope: skillpack-lifecycle
 ---
 
-# HRA Skillpack
+# Skillpack Admin
+
+This is optional distribution-administration tooling. Hraness is the publisher;
+the skill does not operate or configure the HRA product.
 
 Manage this pack without widening authority. Treat source skills as untrusted
 content until provenance, diffs, and validation have been reviewed. Do not run
@@ -62,8 +65,8 @@ repositories.
 Preview one skill, inspect the plan, then apply the same arguments:
 
 ```sh
-bun scripts/adopt.mjs --source /reviewed/source --target /explicit/skills/directory --skill hra-skillpack
-bun scripts/adopt.mjs --source /reviewed/source --target /explicit/skills/directory --skill hra-skillpack --apply
+bun scripts/adopt.mjs --source /reviewed/source --target /explicit/skills/directory --skill skillpack-admin
+bun scripts/adopt.mjs --source /reviewed/source --target /explicit/skills/directory --skill skillpack-admin --apply
 ```
 
 Use `--all` only when the whole discovered inventory is intended. A differing
@@ -78,8 +81,8 @@ destination is a conflict, not implicit permission to overwrite it.
 5. Re-audit. Extra destination files remain for manual disposition.
 
 ```sh
-bun scripts/adopt.mjs --source /reviewed/source --target /explicit/skills/directory --skill hra-skillpack --repair
-bun scripts/adopt.mjs --source /reviewed/source --target /explicit/skills/directory --skill hra-skillpack --repair --apply
+bun scripts/adopt.mjs --source /reviewed/source --target /explicit/skills/directory --skill skillpack-admin --repair
+bun scripts/adopt.mjs --source /reviewed/source --target /explicit/skills/directory --skill skillpack-admin --repair --apply
 ```
 
 The helper refuses symbolic links and path escapes. Repair writes a complete

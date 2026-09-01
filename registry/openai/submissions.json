@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "publisher": "Hraness",
+  "website": "https://github.com/hraness/skillpack",
+  "support": "https://github.com/hraness/skillpack/issues",
+  "privacyPolicy": "https://github.com/hraness/skillpack/blob/main/PRIVACY.md",
+  "termsOfService": "https://github.com/hraness/skillpack/blob/main/TERMS.md",
+  "availability": {
+    "mode": "all-supported-regions"
+  },
+  "plugins": [
+    {
+      "plugin": "hraness-engineering",
+      "bundle": "plugins/hraness-engineering",
+      "logo": "plugins/hraness-engineering/assets/logo.png",
+      "publicName": "Repository Engineering by Hraness",
+      "shortDescription": "Focused, non-overlapping workflows for understanding and improving repositories.",
+      "longDescription": "Map repository features, explain current behavior and rationale, assess change impact, compare approaches, create or maintain app verifiers, engineer tests, investigate measured performance, maintain documentation, and perform behavior-preserving refactors.",
+      "category": "Productivity",
+      "releaseNotes": "Initial public release of 11 focused repository-engineering skills.",
+      "starterPrompts": [
+        "Map this repository's features and proof surfaces.",
+        "Assess the blast radius of this proposed change.",
+        "Create a safe verifier for this application."
+      ],
+      "testCases": {
+        "positive": [
+          { "prompt": "Map this repository's domains, entry points, and validation surfaces.", "expectedWorkflow": "Select repository-feature-map and inspect authoritative repository sources without changing them.", "expectedResult": "An evidence-backed map of domains, entry points, runtime flows, ownership, and validation surfaces.", "fixture": "A user-authorized repository with source, configuration, and tests; no external account is required." },
+          { "prompt": "Explain how this authentication callback behaves now.", "expectedWorkflow": "Select semantic-code-analysis and trace current code without inferring historical intent.", "expectedResult": "A bounded control-flow and data-flow explanation with failure paths and verification evidence.", "fixture": "A user-authorized repository containing the callback and its callers; no live credential is required." },
+          { "prompt": "Assess the blast radius of changing this exported type.", "expectedWorkflow": "Select assess-change-impact and inspect callers, contracts, state, operations, and tests without implementing the change.", "expectedResult": "A risk-ranked impact register and validation plan tied to concrete callers and contracts.", "fixture": "A user-authorized typed repository with at least one exported type and consumer." },
+          { "prompt": "Add focused regression tests for this reproduced bug.", "expectedWorkflow": "Select test-engineer, reproduce the behavior, and add the smallest reliable automated regression test.", "expectedResult": "Focused test changes plus exact failing-before and passing-after evidence when the fixture permits it.", "fixture": "A disposable user-authorized repository fixture with the bug reproduction and existing test runner." },
+          { "prompt": "Profile and improve this measured startup regression.", "expectedWorkflow": "Select performance-investigator, preserve a controlled baseline, profile a hypothesis, then validate the bounded change.", "expectedResult": "Baseline and after measurements, the causal finding, the minimal change, and regression evidence.", "fixture": "A user-authorized repository with a repeatable startup benchmark; no production account is required." }
+        ],
+        "negative": [
+          { "prompt": "Execute this approved five-phase implementation plan with multiple workers.", "safeFallback": "Decline to route through repository-engineering skills and identify Phased Delivery as the bounded owner.", "rationale": "This pack analyzes or changes one repository concern; it does not coordinate multi-phase workers and join gates." },
+          { "prompt": "Run an assumption audit on this business claim.", "safeFallback": "Do not choose an engineering skill; ask the user to invoke the explicit semantic operator if available.", "rationale": "A repository workflow must not silently transform a general business claim." },
+          { "prompt": "Repair the installed Hraness skills distribution.", "safeFallback": "Do not edit installation state and identify skillpack administration as the correct owner.", "rationale": "Distribution lifecycle changes are outside repository-engineering ownership." }
+        ]
+      }
+    },
+    {
+      "plugin": "code-orchestrator",
+      "bundle": "plugins/code-orchestrator",
+      "logo": "plugins/code-orchestrator/assets/logo.png",
+      "publicName": "Phased Delivery",
+      "shortDescription": "Plan and execute explicitly multi-phase repository delivery with independent review.",
+      "longDescription": "Write dependency-ordered implementation plans or execute an existing phase plan through bounded implementers, independent reviewers, join gates, validation, and final integration while preserving repository and host policy.",
+      "category": "Productivity",
+      "releaseNotes": "Initial public release of phase planning and reviewed multi-phase delivery skills.",
+      "starterPrompts": [
+        "Turn this approved design into a phased implementation plan.",
+        "Execute this phase plan with implementation and independent review."
+      ],
+      "testCases": {
+        "positive": [
+          { "prompt": "Turn this approved architecture into an implementation-ready phase plan.", "expectedWorkflow": "Select write-phase-plan and inspect repository rules before ordering dependencies and ownership.", "expectedResult": "A dependency-ordered phase plan with bounded write scopes, acceptance criteria, validation, and integration ownership.", "fixture": "An approved architecture brief and a user-authorized repository; no external account is required." },
+          { "prompt": "Restructure this draft so multiple workers can execute independent phases.", "expectedWorkflow": "Select write-phase-plan, identify convergence files, and restructure the draft without starting implementation.", "expectedResult": "An independently executable plan with explicit join gates and status logging.", "fixture": "A draft phase plan and repository instructions supplied by the user." },
+          { "prompt": "Execute this existing multi-phase plan with implementers and reviewers.", "expectedWorkflow": "Select phase-orchestrator, assign bounded implementers and independent reviewers, and enforce each join gate.", "expectedResult": "Phase-by-phase implementation and review evidence followed by one final integration result.", "fixture": "A user-authorized repository and an existing implementation-ready phase plan." },
+          { "prompt": "Continue this approved phase plan through final integration and required checks.", "expectedWorkflow": "Select phase-orchestrator, resume from recorded status, and preserve repository delivery gates.", "expectedResult": "Completed remaining phases, reviewer outcomes, final aggregate validation, and delivery status.", "fixture": "A user-authorized repository, approved plan, and current phase-status record." },
+          { "prompt": "Delegate these independent phases, review each, then integrate the converged tree.", "expectedWorkflow": "Select phase-orchestrator, preserve disjoint ownership, and keep one integration owner.", "expectedResult": "Worker receipts, independent review findings, repaired phases if needed, and a converged validated tree.", "fixture": "A user-authorized repository with a plan whose phases have disjoint or explicitly convergent scopes." }
+        ],
+        "negative": [
+          { "prompt": "Fix this one-line typo and run the focused test.", "safeFallback": "Handle it as ordinary single-owner coding without invoking phased delivery.", "rationale": "Worker and reviewer fan-out would add coordination cost without an independently deliverable phase boundary." },
+          { "prompt": "Choose between these two unresolved architectures.", "safeFallback": "Stop before plan authoring or execution and route the user to an evidence-based approach comparison.", "rationale": "Phased delivery requires an already-decided implementation direction." },
+          { "prompt": "Schedule this heavyweight test on the local host.", "safeFallback": "Leave the command to the repository or host scheduler and do not claim compute custody.", "rationale": "The plugin preserves host scheduling boundaries and does not replace them." }
+        ]
+      }
+    }
+  ],
+  "deferredPlugins": [
+    {
+      "plugin": "semantic-algos",
+      "submissionGate": "Confirm that Rob Cheung's permission explicitly covers redistribution and installation through third-party public directories before submission.",
+      "bundle": "plugins/semantic-algos",
+      "logo": "plugins/semantic-algos/assets/logo.png",
+      "publicName": "Semantic Algorithms by Rob Cheung",
+      "shortDescription": "Explicit semantic transforms and inspectable Sem programs, adapted with permission.",
+      "longDescription": "Run explicitly requested reasoning operators such as assumption audit, inversion, first principles, counterfactuals, abstraction ladders, decision matrices, question forging, and inspectable Sem compilation and execution. Attribution and permission terms remain attached.",
+      "category": "Productivity",
+      "releaseNotes": "Initial public release of 19 explicit semantic operators and inspectable Sem workflows.",
+      "starterPrompts": [
+        "Use $assumption-audit on this plan.",
+        "Use $sem-run to build an inspectable semantic computation.",
+        "Use $question-forge on this stuck question."
+      ],
+      "testCases": {
+        "positive": [
+          { "prompt": "Use $assumption-audit to expose the load-bearing premises in this proposal.", "expectedWorkflow": "Run only the explicitly named assumption audit against the supplied proposal.", "expectedResult": "An assumption register, keystone assumption, test agenda, and fallback.", "fixture": "User-supplied text only; no repository or account is required." },
+          { "prompt": "Use $inversion to derive safeguards for this desired outcome.", "expectedWorkflow": "Run only inversion, identify failure-guaranteeing mechanisms, and invert them into safeguards.", "expectedResult": "A ranked failure model and corresponding safeguards with limits.", "fixture": "A user-supplied desired outcome; no external data is required." },
+          { "prompt": "Use $decision-matrix on these options and weights.", "expectedWorkflow": "Run only the decision-matrix operator using the supplied options and weights.", "expectedResult": "A scored matrix, assumptions, winner or tie, and sensitivity analysis.", "fixture": "User-supplied options, criteria, weights, and any required factual inputs." },
+          { "prompt": "Use $question-forge to repair this loaded question without answering it.", "expectedWorkflow": "Diagnose and replace the question without executing or answering the replacement.", "expectedResult": "A defect diagnosis and a small set of improved questions.", "fixture": "The user-supplied question only." },
+          { "prompt": "Use $sem-compile to compile this request without executing it.", "expectedWorkflow": "Compile an inspectable Sem program and stop before execution.", "expectedResult": "A typed semantic computation graph with inputs, operators, dependencies, and outputs.", "fixture": "The user-supplied request and bounded source text; no external account is required." }
+        ],
+        "negative": [
+          { "prompt": "Fix the failing repository test.", "safeFallback": "Do not select a semantic operator; handle or route the ordinary coding task normally.", "rationale": "All semantic operators are explicit-only and must not hijack repository work." },
+          { "prompt": "Execute this multi-phase delivery plan.", "safeFallback": "Do not use Sem execution as orchestration; route to Phased Delivery if explicitly requested.", "rationale": "Inspectable semantic computation does not own repository worker coordination or delivery gates." },
+          { "prompt": "Write ordinary marketing copy about this feature.", "safeFallback": "Write the requested copy without a semantic operator or ask which explicit operator the user wants.", "rationale": "The pack must not be implicitly invoked for ordinary generative tasks." }
+        ]
+      }
+    }
+  ]
+}

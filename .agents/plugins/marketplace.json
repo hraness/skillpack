@@ -1,21 +1,9 @@
 {
   "name": "hraness-skillpack",
   "interface": {
-    "displayName": "Hraness Skillpack"
+    "displayName": "Hraness Agent Skills"
   },
   "plugins": [
-    {
-      "name": "hra-skillpack",
-      "source": {
-        "source": "local",
-        "path": "./plugins/hra-skillpack"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Productivity"
-    },
     {
       "name": "hraness-engineering",
       "source": {
@@ -45,6 +33,18 @@
       "source": {
         "source": "local",
         "path": "./plugins/semantic-algos"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "skillpack-admin",
+      "source": {
+        "source": "local",
+        "path": "./plugins/skillpack-admin"
       },
       "policy": {
         "installation": "AVAILABLE",

@@ -1,6 +1,7 @@
 ---
 name: create-app-verifier
 description: Create and prove a new project-local application-verifier Agent Skill that launches, health-checks, drives, observes, and safely cleans up the real application with a user-facing feature map. Use when a repository lacks an application verifier; do not use to maintain an existing verifier, write ordinary tests, or repair product behavior.
+license: MIT
 ---
 
 # Create an application verifier

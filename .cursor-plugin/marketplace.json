@@ -4,34 +4,30 @@
     "name": "Hraness contributors"
   },
   "metadata": {
-    "description": "Portable engineering, orchestration, semantic, and skillpack-management skills.",
-    "version": "0.1.0"
+    "description": "General-purpose repository engineering, phased delivery, semantic reasoning, and optional distribution administration.",
+    "version": "0.2.0"
   },
   "plugins": [
-    {
-      "name": "hra-skillpack",
-      "source": "plugins/hra-skillpack",
-      "description": "Audit, adopt, detect drift in, and safely repair the Hraness Skillpack.",
-      "version": "0.1.0",
-      "license": "MIT"
-    },
     {
       "name": "hraness-engineering",
       "source": "plugins/hraness-engineering",
       "description": "Bounded engineering analysis and repository verification workflows.",
-      "version": "0.1.0"
+      "version": "0.2.0",
+      "license": "MIT"
     },
     {
       "name": "code-orchestrator",
       "source": "plugins/code-orchestrator",
       "description": "Multi-phase repository delivery after an explicit plan exists.",
-      "version": "0.1.0"
+      "version": "0.2.0",
+      "license": "MIT"
     },
     {
-      "name": "semantic-algos",
-      "source": "plugins/semantic-algos",
-      "description": "Explicit semantic and reasoning transforms.",
-      "version": "0.1.0"
+      "name": "skillpack-admin",
+      "source": "plugins/skillpack-admin",
+      "description": "Optional administration for this Hraness Agent Skills distribution; not an HRA product workflow.",
+      "version": "0.2.0",
+      "license": "MIT"
     }
   ]
 }

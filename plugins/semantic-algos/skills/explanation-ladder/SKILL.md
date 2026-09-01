@@ -5,6 +5,7 @@ description: >-
   deepens, or reframes the prior one. Use only when the user invokes
   $explanation-ladder. Do not route documentation work, repository analysis,
   coding, delivery, or operations through this skill.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Explanation Ladder

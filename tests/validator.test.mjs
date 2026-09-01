@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { discoverAndValidateSkills, parseFrontmatter, validateRouting } from "../scripts/validate.mjs";
+import { discoverAndValidateSkills, parseFrontmatter, validateRouting, validateSkillGroupings } from "../scripts/validate.mjs";
 
 describe("skill validation", () => {
   test("reads bounded Agent Skills frontmatter", async () => {
@@ -32,5 +32,17 @@ describe("skill validation", () => {
     const errors = [];
     validateRouting(catalog, fixtures, errors);
     expect(errors.some((error) => error.includes("exactly one pairwise"))).toBe(true);
+  });
+
+  test("requires each skills.sh skill exactly once", () => {
+    const skills = [{ name: "one" }, { name: "two" }];
+    const metadata = {
+      $schema: "https://skills.sh/schemas/skills.sh.schema.json",
+      groupings: [{ title: "Example", description: "Example grouping", skills: ["one", "one"] }]
+    };
+    const errors = [];
+    validateSkillGroupings(skills, metadata, errors);
+    expect(errors.some((error) => error.includes("duplicate"))).toBe(true);
+    expect(errors.some((error) => error.includes("every discovered skill"))).toBe(true);
   });
 });

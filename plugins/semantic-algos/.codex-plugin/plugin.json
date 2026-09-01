@@ -1,6 +1,6 @@
 {
   "name": "semantic-algos",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Explicit semantic reasoning operators and inspectable Sem programs by Rob Cheung, adapted for Codex and Cursor with permission.",
   "author": {
     "name": "Rob Cheung and Hraness",
@@ -8,6 +8,7 @@
   },
   "homepage": "https://github.com/hraness/skillpack/tree/main/plugins/semantic-algos",
   "repository": "https://github.com/hraness/skillpack",
+  "license": "LicenseRef-Permission-Rob-Cheung",
   "keywords": [
     "agent-skills",
     "semantic-algorithms",
@@ -16,7 +17,7 @@
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Semantic Algos",
+    "displayName": "Semantic Algorithms by Rob Cheung",
     "shortDescription": "Run explicit, inspectable semantic computations.",
     "longDescription": "Provides Rob Cheung's reasoning operators and Sem compiler, runner, and presenter as an explicit-invocation pack, separated from ordinary coding and repository delivery.",
     "developerName": "Rob Cheung and Hraness",
@@ -30,6 +31,12 @@
     "defaultPrompt": [
       "Use $sem-run to turn this question into an inspectable semantic computation.",
       "Use $assumption-audit to expose and test this claim's hidden premises."
-    ]
+    ],
+    "websiteURL": "https://github.com/hraness/skillpack/tree/main/plugins/semantic-algos",
+    "privacyPolicyURL": "https://github.com/hraness/skillpack/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/hraness/skillpack/blob/main/TERMS.md",
+    "brandColor": "#1428BF",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png"
   }
 }

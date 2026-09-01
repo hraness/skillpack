@@ -6,6 +6,7 @@ description: >-
   Use only when the user invokes $sem-run and the host supports fresh
   no-history subagents. Do not use for repository coding, delivery,
   orchestration, shell work, messaging, or other external effects.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Sem Run

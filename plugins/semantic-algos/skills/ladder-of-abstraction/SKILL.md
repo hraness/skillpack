@@ -5,6 +5,7 @@ description: >-
   middle-level patterns, and governing principles. Use only when the user
   invokes $ladder-of-abstraction. Do not use for repository maps, code
   analysis, implementation, delivery, or operations.
+license: LicenseRef-Permission-Rob-Cheung
 ---
 
 # Ladder Of Abstraction

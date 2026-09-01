@@ -1,6 +1,7 @@
 ---
 name: repository-feature-map
 description: Build or refresh a navigable, evidence-backed map of a repository's domains, entry points, runtime flows, data ownership, and validation surfaces. Use when someone needs orientation or a maintained repository map; do not use to explain one subsystem in depth, infer historical rationale, or assess a proposed change.
+license: MIT
 ---
 
 # Repository feature map

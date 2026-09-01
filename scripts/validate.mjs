@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const REVISION_PATTERN = /^[0-9a-f]{40}$/;
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const HTTPS_PATTERN = /^https:\/\//;
+const OPENAI_READY_PLUGINS = ["code-orchestrator", "hraness-engineering"];
+const OPENAI_DEFERRED_PLUGINS = ["semantic-algos"];
+const CURSOR_PUBLIC_PLUGINS = ["code-orchestrator", "hraness-engineering", "skillpack-admin"];
 const ALLOWED_SKILL_FRONTMATTER = new Set(["name", "description", "license", "allowed-tools", "metadata"]);
 const TEXT_EXTENSIONS = new Set([".md", ".mdc", ".json", ".mjs", ".js", ".ts", ".yml", ".yaml", ".sh"]);
 const PLACEHOLDERS = [/[[]TODO(?::|])/i, new RegExp(`\\b(?:${["FIX", "ME"].join("")}|${["CHANGE", "ME"].join("")})\\b`), /\bYOUR_(?:NAME|ORG|TOKEN|PATH)\b/, /<insert[-_ ]/i];
@@ -151,9 +155,33 @@ async function validateManifestPath(pluginRoot, value, label, errors) {
   if (!(await exists(resolve(pluginRoot, value)))) errors.push(failure(`${label} does not exist: ${value}`, pluginRoot));
 }
 
+function sameSortedValues(actual, expected) {
+  return JSON.stringify([...actual].sort()) === JSON.stringify([...expected].sort());
+}
+
+export function validateSkillGroupings(skills, metadata, errors = []) {
+  if (metadata?.$schema !== "https://skills.sh/schemas/skills.sh.schema.json" || !Array.isArray(metadata?.groupings)) {
+    errors.push("skills.sh.json has unsupported shape");
+    return;
+  }
+  const grouped = [];
+  for (const grouping of metadata.groupings) {
+    if (!grouping.title || !grouping.description || !Array.isArray(grouping.skills) || grouping.skills.length === 0) {
+      errors.push("each skills.sh grouping needs a title, description, and non-empty skills list");
+      continue;
+    }
+    grouped.push(...grouping.skills);
+  }
+  const duplicates = grouped.filter((name, index) => grouped.indexOf(name) !== index);
+  if (duplicates.length) errors.push(`skills.sh groupings duplicate: ${[...new Set(duplicates)].sort().join(", ")}`);
+  const discovered = skills.map((skill) => skill.name);
+  if (!sameSortedValues(grouped, discovered)) errors.push("skills.sh groupings must list every discovered skill exactly once");
+}
+
 async function validateManifests(root, errors) {
   const codexMarketplace = await readJson(join(root, ".agents/plugins/marketplace.json"), errors);
   const cursorMarketplace = await readJson(join(root, ".cursor-plugin/marketplace.json"), errors);
+  const copilotMarketplace = await readJson(join(root, ".github/plugin/marketplace.json"), errors);
   for (const [host, marketplace] of [["Codex", codexMarketplace], ["Cursor", cursorMarketplace]]) {
     if (!marketplace) continue;
     const seen = new Set();
@@ -185,8 +213,19 @@ async function validateManifests(root, errors) {
   const expectedNames = pluginEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
   const codexNames = (codexMarketplace?.plugins ?? []).map((entry) => entry.name).sort();
   const cursorNames = (cursorMarketplace?.plugins ?? []).map((entry) => entry.name).sort();
+  const copilotNames = (copilotMarketplace?.plugins ?? []).map((entry) => entry.name).sort();
   if (JSON.stringify(codexNames) !== JSON.stringify(expectedNames)) errors.push("Codex marketplace must list every plugin exactly once");
-  if (JSON.stringify(cursorNames) !== JSON.stringify(expectedNames)) errors.push("Cursor marketplace must list every plugin exactly once");
+  if (!sameSortedValues(cursorNames, CURSOR_PUBLIC_PLUGINS)) errors.push("Cursor marketplace must list exactly the permissively licensed public plugins");
+  if (!sameSortedValues(copilotNames, expectedNames)) errors.push("GitHub Copilot marketplace must list every plugin exactly once");
+
+  if (!NAME_PATTERN.test(copilotMarketplace?.name ?? "") || !copilotMarketplace?.owner?.name || !SEMVER_PATTERN.test(copilotMarketplace?.metadata?.version ?? "")) errors.push("GitHub Copilot marketplace needs a name, owner, and strict semver metadata");
+  for (const entry of copilotMarketplace?.plugins ?? []) {
+    if (!safeRelativePath(entry.source)) { errors.push(`GitHub Copilot marketplace ${entry.name} has unsafe source path`); continue; }
+    const pluginRoot = resolve(root, entry.source);
+    const manifest = await readJson(join(pluginRoot, "plugin.json"), errors);
+    if (manifest?.name !== entry.name) errors.push(`GitHub Copilot plugin ${entry.name} must match its Agent Plugin manifest`);
+    if (entry.version !== manifest?.version) errors.push(`GitHub Copilot plugin ${entry.name} version must match its manifest`);
+  }
 
   for (const name of expectedNames) {
     const pluginRoot = join(root, "plugins", name);
@@ -202,6 +241,11 @@ async function validateManifests(root, errors) {
     if (portable?.$schema !== "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json") errors.push(`Agent Plugin manifest ${name} needs the 1.0.0 schema`);
     if (portable?.version !== cursor?.version || portable?.version !== codex?.version) errors.push(`plugin ${name} manifest versions must match`);
     if (!codex?.interface?.displayName || !codex?.interface?.shortDescription || !codex?.interface?.longDescription || !codex?.interface?.developerName || !codex?.interface?.category || !Array.isArray(codex?.interface?.defaultPrompt)) errors.push(`Codex manifest ${name} needs complete interface metadata`);
+    for (const key of ["websiteURL", "privacyPolicyURL", "termsOfServiceURL"]) if (!HTTPS_PATTERN.test(codex?.interface?.[key] ?? "")) errors.push(`Codex manifest ${name} interface.${key} needs an HTTPS URL`);
+    for (const key of ["composerIcon", "logo"]) await validateManifestPath(pluginRoot, codex?.interface?.[key], `Codex interface.${key}`, errors);
+    if (cursor?.logo) await validateManifestPath(pluginRoot, cursor.logo, "Cursor logo", errors);
+    if (CURSOR_PUBLIC_PLUGINS.includes(name) && (portable?.license !== "MIT" || cursor?.license !== "MIT" || codex?.license !== "MIT")) errors.push(`Cursor public plugin ${name} must be MIT licensed in every manifest`);
+    if (name === "semantic-algos" && [portable?.license, cursor?.license, codex?.license].some((license) => license !== "LicenseRef-Permission-Rob-Cheung")) errors.push("semantic-algos must preserve its permission-based license reference in every manifest");
   }
 
   const semanticRoot = join(root, "plugins/semantic-algos");
@@ -213,6 +257,47 @@ async function validateManifests(root, errors) {
   for (const name of semanticCommands) {
     const command = await readFile(join(semanticRoot, "commands", `${name}.md`), "utf8");
     if (!command.includes(`../skills/${name}/SKILL.md`)) errors.push(`Cursor semantic command ${name} must reference its canonical skill`);
+  }
+}
+
+async function validateRegistryMetadata(root, skills, errors) {
+  for (const path of ["PRIVACY.md", "TERMS.md", "SUPPORT.md", "SECURITY.md"]) {
+    if (!(await exists(join(root, path)))) errors.push(`registry publication requires ${path}`);
+  }
+
+  const grouping = await readJson(join(root, "skills.sh.json"), errors);
+  validateSkillGroupings(skills, grouping, errors);
+
+  const openaiPath = join(root, "registry/openai/submissions.json");
+  const openai = await readJson(openaiPath, errors);
+  if (openai) {
+    for (const key of ["website", "support", "privacyPolicy", "termsOfService"]) if (!HTTPS_PATTERN.test(openai[key] ?? "")) errors.push(`OpenAI registry ${key} needs an HTTPS URL`);
+    if (!openai.publisher) errors.push("OpenAI registry needs a publisher");
+    if (openai.availability?.mode !== "all-supported-regions") errors.push("OpenAI registry availability must be explicit");
+    const plugins = (openai.plugins ?? []).map((entry) => entry.plugin);
+    const deferred = (openai.deferredPlugins ?? []).map((entry) => entry.plugin);
+    if (!sameSortedValues(plugins, OPENAI_READY_PLUGINS)) errors.push("OpenAI registry must prepare exactly the two submission-ready capability plugins");
+    if (!sameSortedValues(deferred, OPENAI_DEFERRED_PLUGINS)) errors.push("OpenAI registry must defer semantic-algos pending explicit directory-distribution permission");
+    for (const entry of [...(openai.plugins ?? []), ...(openai.deferredPlugins ?? [])]) {
+      if (![...OPENAI_READY_PLUGINS, ...OPENAI_DEFERRED_PLUGINS].includes(entry.plugin)) continue;
+      if (entry.bundle !== `plugins/${entry.plugin}`) errors.push(`OpenAI registry ${entry.plugin} has an unexpected bundle path`);
+      if (!entry.publicName || !entry.shortDescription || !entry.longDescription || !entry.category || !entry.releaseNotes) errors.push(`OpenAI registry ${entry.plugin} lacks listing metadata`);
+      if (!Array.isArray(entry.starterPrompts) || entry.starterPrompts.length < 2) errors.push(`OpenAI registry ${entry.plugin} needs at least two starter prompts`);
+      if (entry.testCases?.positive?.length !== 5 || entry.testCases?.negative?.length !== 3) errors.push(`OpenAI registry ${entry.plugin} needs exactly five positive and three negative test cases`);
+      for (const item of entry.testCases?.positive ?? []) if (!item.prompt || !item.expectedWorkflow || !item.expectedResult || !item.fixture) errors.push(`OpenAI registry ${entry.plugin} has an incomplete positive test case`);
+      for (const item of entry.testCases?.negative ?? []) if (!item.prompt || !item.safeFallback || !item.rationale) errors.push(`OpenAI registry ${entry.plugin} has an incomplete negative test case`);
+      if (!safeRelativePath(entry.logo) || !(await exists(resolve(root, entry.logo)))) errors.push(`OpenAI registry ${entry.plugin} has an invalid logo path`);
+      if (!(await exists(resolve(root, entry.bundle)))) errors.push(`OpenAI registry ${entry.plugin} bundle does not exist`);
+    }
+    for (const entry of openai.deferredPlugins ?? []) if (!entry.submissionGate) errors.push(`OpenAI registry deferred plugin ${entry.plugin} needs an explicit submission gate`);
+  }
+
+  const cursor = await readJson(join(root, "registry/cursor/submission.json"), errors);
+  if (cursor) {
+    for (const key of ["repository", "support"]) if (!HTTPS_PATTERN.test(cursor[key] ?? "")) errors.push(`Cursor registry ${key} needs an HTTPS URL`);
+    if (!sameSortedValues(cursor.plugins ?? [], CURSOR_PUBLIC_PLUGINS)) errors.push("Cursor registry must submit exactly the three MIT-licensed plugins");
+    const semanticExclusion = (cursor.excluded ?? []).find((entry) => entry.plugin === "semantic-algos");
+    if (!semanticExclusion?.reason) errors.push("Cursor registry must explain why semantic-algos is excluded");
   }
 }
 
@@ -316,6 +401,7 @@ export async function validateRepository(inputRoot) {
     for (const item of catalog.skills) if (!discoveredNames.has(item.name)) errors.push(`catalog references undiscovered skill ${item.name}`);
   }
   await validateManifests(root, errors);
+  await validateRegistryMetadata(root, skills, errors);
   await validateProvenance(root, skills, errors);
   await validateText(root, errors);
   return { root, skills: skills.map(({ name, plugin }) => ({ name, plugin })), errors };

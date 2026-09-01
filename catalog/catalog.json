@@ -3,8 +3,8 @@
   "schemaVersion": 1,
   "skills": [
     {
-      "name": "hra-skillpack",
-      "plugin": "hra-skillpack",
+      "name": "skillpack-admin",
+      "plugin": "skillpack-admin",
       "owner": "Installation, audit, adoption, drift detection, and backup-first repair for this pack.",
       "positive": ["audit or adopt this shared pack", "repair a known pack-managed installation"],
       "negative": ["create a repository app verifier", "perform product coding or compute scheduling"],
@@ -56,7 +56,7 @@
       "owner": "Creation and end-to-end proof of a new project-local real-application verification skill.",
       "positive": ["build a missing verify-app harness", "map and drive a real application safely"],
       "negative": ["repair an existing verifier", "write ordinary code-level tests"],
-      "adjacent": ["hra-skillpack", "maintain-app-verifier", "test-engineer"]
+      "adjacent": ["skillpack-admin", "maintain-app-verifier", "test-engineer"]
     },
     {
       "name": "maintain-app-verifier",
