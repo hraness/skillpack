@@ -80,8 +80,36 @@ repair. No helper discovers or writes a host-specific home directory.
 - Other Agent Skills-compatible hosts can consume the individual directories
   below `plugins/*/skills/`.
 
-Host installation commands change over time; follow the host's current
-documentation and inspect the local marketplace before enabling it.
+### Codex bootstrap
+
+Install the reviewed v0.1.0 release, then start a fresh Codex task so its skill
+catalog is rebuilt:
+
+```sh
+codex plugin marketplace add hraness/skillpack --ref v0.1.0
+codex plugin add hra-skillpack@hraness-skillpack
+codex plugin add hraness-engineering@hraness-skillpack
+codex plugin add code-orchestrator@hraness-skillpack
+codex plugin add semantic-algos@hraness-skillpack
+codex plugin list --json
+```
+
+The first two plugins are the default engineering baseline. Code Orchestrator
+is for explicitly phased work; Semantic Algos is explicit-only and may be
+installed without adding its operators to ordinary automatic routing.
+
+### Cursor bootstrap
+
+Import `https://github.com/hraness/skillpack` as a Cursor team marketplace, or
+copy or symlink individual `plugins/<name>` directories into Cursor's
+documented local-plugin directory for a canary. Reload Cursor after a local
+install. Engineering, orchestration, and lifecycle workflows appear as skills;
+semantic operators appear only as `/skill-name` commands.
+
+Host commands and local-plugin locations can change. Confirm them against the
+current [Codex plugin documentation](https://learn.chatgpt.com/docs/build-plugins)
+or [Cursor plugin documentation](https://prod.cursor.com/docs/plugins) and
+inspect the installed marketplace before enabling a newer release.
 
 ## Provenance and release integrity
 
