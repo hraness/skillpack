@@ -1,0 +1,6 @@
+interface:
+  display_name: "Analogy Transfer"
+  short_description: "Transfer mechanisms across structural analogies"
+  default_prompt: "Use $analogy-transfer to find structural twins for this problem and test the disanalogies."
+policy:
+  allow_implicit_invocation: false

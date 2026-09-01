@@ -1,0 +1,6 @@
+interface:
+  display_name: "Parable"
+  short_description: "Embody a question in an unresolved short story"
+  default_prompt: "Use $parable to embody this question in a short original parable without resolving it."
+policy:
+  allow_implicit_invocation: false

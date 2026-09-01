@@ -1,0 +1,4 @@
+interface:
+  display_name: "Canary"
+  short_description: "Exercise portable skill validation"
+  default_prompt: "Use $canary to exercise this offline validation fixture."

@@ -1,0 +1,266 @@
+{
+  "$schema": "./catalog.schema.json",
+  "schemaVersion": 1,
+  "skills": [
+    {
+      "name": "hra-skillpack",
+      "plugin": "hra-skillpack",
+      "owner": "Installation, audit, adoption, drift detection, and backup-first repair for this pack.",
+      "positive": ["audit or adopt this shared pack", "repair a known pack-managed installation"],
+      "negative": ["create a repository app verifier", "perform product coding or compute scheduling"],
+      "adjacent": ["create-app-verifier"]
+    },
+    {
+      "name": "repository-feature-map",
+      "plugin": "hraness-engineering",
+      "owner": "Broad current-state navigation map from user capabilities to code ownership and proof surfaces.",
+      "positive": ["orient a contributor across a repository", "map capabilities and entry points"],
+      "negative": ["explain one bounded code path", "reconstruct historical intent"],
+      "adjacent": ["semantic-code-analysis"]
+    },
+    {
+      "name": "semantic-code-analysis",
+      "plugin": "hraness-engineering",
+      "owner": "Evidence-backed explanation of how a bounded current code path behaves now.",
+      "positive": ["trace current calls, data, state, and failures", "explain one subsystem"],
+      "negative": ["map the whole repository", "infer why the design was chosen"],
+      "adjacent": ["repository-feature-map", "reconstruct-rationale"]
+    },
+    {
+      "name": "reconstruct-rationale",
+      "plugin": "hraness-engineering",
+      "owner": "Dated, confidence-calibrated reconstruction of design intent from authorized history.",
+      "positive": ["explain why an existing design arose", "build a repository decision timeline"],
+      "negative": ["explain current runtime behavior", "estimate prospective blast radius"],
+      "adjacent": ["semantic-code-analysis", "assess-change-impact", "docs-maintainer", "n-whys"]
+    },
+    {
+      "name": "assess-change-impact",
+      "plugin": "hraness-engineering",
+      "owner": "Prospective blast radius, compatibility risks, sequencing, and required proof for a defined change.",
+      "positive": ["identify consumers a proposed change can affect", "define critical validation"],
+      "negative": ["generate competing designs", "reconstruct the history of unchanged code"],
+      "adjacent": ["reconstruct-rationale", "compare-approaches"]
+    },
+    {
+      "name": "compare-approaches",
+      "plugin": "hraness-engineering",
+      "owner": "Decision-ready comparison of viable technical approaches against explicit constraints.",
+      "positive": ["compare two or more open implementation designs", "recommend one technical approach"],
+      "negative": ["assess one already-defined change", "write or execute an implementation plan"],
+      "adjacent": ["assess-change-impact", "write-phase-plan", "decision-matrix", "question-forge"]
+    },
+    {
+      "name": "create-app-verifier",
+      "plugin": "hraness-engineering",
+      "owner": "Creation and end-to-end proof of a new project-local real-application verification skill.",
+      "positive": ["build a missing verify-app harness", "map and drive a real application safely"],
+      "negative": ["repair an existing verifier", "write ordinary code-level tests"],
+      "adjacent": ["hra-skillpack", "maintain-app-verifier", "test-engineer"]
+    },
+    {
+      "name": "maintain-app-verifier",
+      "plugin": "hraness-engineering",
+      "owner": "Source and live drift audit for an existing project-local application verifier.",
+      "positive": ["refresh an existing verifier feature map", "repair proven verifier drift"],
+      "negative": ["create a verifier from scratch", "change product behavior to hide a regression"],
+      "adjacent": ["create-app-verifier", "test-engineer"]
+    },
+    {
+      "name": "test-engineer",
+      "plugin": "hraness-engineering",
+      "owner": "Focused automated test strategy, reproduction, implementation, and regression evidence.",
+      "positive": ["add reliable code-level regression tests", "choose the right automated test layer"],
+      "negative": ["create or maintain a project-wide app driver", "perform performance tuning"],
+      "adjacent": ["create-app-verifier", "maintain-app-verifier"]
+    },
+    {
+      "name": "performance-investigator",
+      "plugin": "hraness-engineering",
+      "owner": "Measurement-led performance diagnosis and before-after proof for a reproducible workload.",
+      "positive": ["profile a measured latency or resource problem", "verify a performance improvement"],
+      "negative": ["perform unmeasured cleanup", "make a behavior-preserving structural refactor"],
+      "adjacent": ["refactor-maintainer"]
+    },
+    {
+      "name": "docs-maintainer",
+      "plugin": "hraness-engineering",
+      "owner": "Repository documentation aligned to authoritative current behavior, commands, and contracts.",
+      "positive": ["update a README, reference, guide, or runbook", "verify documentation against code"],
+      "negative": ["reconstruct historical rationale", "change product code to make prose true"],
+      "adjacent": ["reconstruct-rationale"]
+    },
+    {
+      "name": "refactor-maintainer",
+      "plugin": "hraness-engineering",
+      "owner": "Behavior-preserving structural change with explicit invariants and complete caller migration.",
+      "positive": ["simplify internals without changing behavior", "migrate callers and remove an obsolete path"],
+      "negative": ["optimize without measurement", "coordinate an approved multi-phase delivery"],
+      "adjacent": ["performance-investigator", "phase-orchestrator"]
+    },
+    {
+      "name": "write-phase-plan",
+      "plugin": "code-orchestrator",
+      "owner": "Implementation-ready dependency-ordered phase plans with ownership, criteria, and validation.",
+      "positive": ["turn an approved design into a phased plan", "restructure a plan for bounded workers"],
+      "negative": ["execute the plan", "choose among unresolved technical approaches"],
+      "adjacent": ["phase-orchestrator", "compare-approaches"]
+    },
+    {
+      "name": "phase-orchestrator",
+      "plugin": "code-orchestrator",
+      "owner": "Multi-phase repository delivery through bounded implementer, reviewer, and integration roles.",
+      "positive": ["execute an existing phase plan", "coordinate independent phase implementation and review"],
+      "negative": ["author a plan only", "run semantic computation or replace host scheduling"],
+      "adjacent": ["write-phase-plan", "refactor-maintainer", "sem-run"]
+    },
+    {
+      "name": "analogy-transfer",
+      "plugin": "semantic-algos",
+      "owner": "Explicit transfer of mechanisms from structurally similar domains with disanalogy checks.",
+      "positive": ["invoke analogy-transfer on supplied text"],
+      "negative": ["move an idea between abstraction levels", "analyze repository code"],
+      "adjacent": ["ladder-of-abstraction"]
+    },
+    {
+      "name": "assumption-audit",
+      "plugin": "semantic-algos",
+      "owner": "Explicit extraction and testing agenda for load-bearing assumptions in supplied text.",
+      "positive": ["invoke assumption-audit on a claim or plan"],
+      "negative": ["derive safeguards from guaranteed failure", "change repository code"],
+      "adjacent": ["inversion", "first-principles-thinking"]
+    },
+    {
+      "name": "counterfactual",
+      "plugin": "semantic-algos",
+      "owner": "Explicit propagation of one minimal alternate fact with calibrated uncertainty.",
+      "positive": ["invoke counterfactual on a supplied scenario"],
+      "negative": ["generate safeguards by inverting a goal", "make future operational changes"],
+      "adjacent": ["inversion"]
+    },
+    {
+      "name": "decision-matrix",
+      "plugin": "semantic-algos",
+      "owner": "Explicit weighted scoring and sensitivity analysis for named options and criteria.",
+      "positive": ["invoke decision-matrix with supplied options"],
+      "negative": ["research open technical designs", "implement the winning option"],
+      "adjacent": ["compare-approaches"]
+    },
+    {
+      "name": "dp-solve",
+      "plugin": "semantic-algos",
+      "owner": "Explicit decomposition into reusable semantic subproblems and memoized synthesis.",
+      "positive": ["invoke dp-solve on a bounded question"],
+      "negative": ["execute a multi-operator Sem program", "write dynamic-programming code"],
+      "adjacent": ["sem-run"]
+    },
+    {
+      "name": "explanation-ladder",
+      "plugin": "semantic-algos",
+      "owner": "Explicit five-level explanation whose successive levels deepen and correct the prior one.",
+      "positive": ["invoke explanation-ladder on a topic"],
+      "negative": ["move freely between concrete and abstract rungs", "maintain repository docs"],
+      "adjacent": ["ladder-of-abstraction"]
+    },
+    {
+      "name": "first-principles-thinking",
+      "plugin": "semantic-algos",
+      "owner": "Explicit reconstruction of a question from facts and hard constraints after removing defaults.",
+      "positive": ["invoke first-principles-thinking on a question"],
+      "negative": ["only inventory assumptions", "clarify purpose, method, and output"],
+      "adjacent": ["assumption-audit", "golden-circle"]
+    },
+    {
+      "name": "golden-circle",
+      "plugin": "semantic-algos",
+      "owner": "Explicit purpose-method-output decomposition into Why, How, and What.",
+      "positive": ["invoke golden-circle on an idea"],
+      "negative": ["rebuild a system from first principles", "implement or publish the result"],
+      "adjacent": ["first-principles-thinking"]
+    },
+    {
+      "name": "inversion",
+      "plugin": "semantic-algos",
+      "owner": "Explicit derivation of safeguards by identifying mechanisms that guarantee failure.",
+      "positive": ["invoke inversion on a desired outcome"],
+      "negative": ["audit assumptions only", "change one historical fact"],
+      "adjacent": ["assumption-audit", "counterfactual"]
+    },
+    {
+      "name": "joke",
+      "plugin": "semantic-algos",
+      "owner": "Explicit original compact joke derived from a contradiction and compatible frame switch.",
+      "positive": ["invoke joke on a supplied tension"],
+      "negative": ["perform ordinary writing or imitate existing work"]
+    },
+    {
+      "name": "ladder-of-abstraction",
+      "plugin": "semantic-algos",
+      "owner": "Explicit movement among concrete cases, recurring patterns, and governing principles.",
+      "positive": ["invoke ladder-of-abstraction on an idea"],
+      "negative": ["search distant analogies", "produce a fixed five-level explanation"],
+      "adjacent": ["analogy-transfer", "explanation-ladder"]
+    },
+    {
+      "name": "lyric",
+      "plugin": "semantic-algos",
+      "owner": "Explicit original poem or lyric that embodies a supplied emotional contradiction.",
+      "positive": ["invoke lyric on a memory, question, or tension"],
+      "negative": ["perform ordinary copywriting or imitate a living artist"]
+    },
+    {
+      "name": "n-whys",
+      "plugin": "semantic-algos",
+      "owner": "Explicit why-chain to a requested depth, including the folded depth-five preset.",
+      "positive": ["invoke n-whys with an explicit depth"],
+      "negative": ["reconstruct repository history", "debug a codebase implicitly"],
+      "adjacent": ["reconstruct-rationale"]
+    },
+    {
+      "name": "nietzche-ladder",
+      "plugin": "semantic-algos",
+      "owner": "Explicit Camel-Lion-Child movement through inheritance, refusal, and creation.",
+      "positive": ["invoke nietzche-ladder on supplied text"],
+      "negative": ["perform historical exegesis or repository delivery"]
+    },
+    {
+      "name": "parable",
+      "plugin": "semantic-algos",
+      "owner": "Explicit original short parable that embodies a question without resolving it.",
+      "positive": ["invoke parable on a supplied question"],
+      "negative": ["state a moral or perform ordinary content writing"]
+    },
+    {
+      "name": "question-forge",
+      "plugin": "semantic-algos",
+      "owner": "Explicit diagnosis and replacement of a loaded or misplaced question without answering it.",
+      "positive": ["invoke question-forge on a stuck question"],
+      "negative": ["compare implementation approaches", "answer or execute the forged question"],
+      "adjacent": ["compare-approaches"]
+    },
+    {
+      "name": "sem-compile",
+      "plugin": "semantic-algos",
+      "owner": "Explicit compilation of a request into an inspectable Sem program without execution.",
+      "positive": ["invoke sem-compile to produce program artifacts"],
+      "negative": ["execute a Sem program", "compile coding or external-effect work"],
+      "adjacent": ["sem-run"]
+    },
+    {
+      "name": "sem-present",
+      "plugin": "semantic-algos",
+      "owner": "Explicit projection of one exact existing Sem run into a validated disposable view manifest.",
+      "positive": ["invoke sem-present on an exact run directory"],
+      "negative": ["execute or resume a Sem run", "render a repository visualization"],
+      "adjacent": ["sem-run"]
+    },
+    {
+      "name": "sem-run",
+      "plugin": "semantic-algos",
+      "owner": "Explicit isolated execution of a Sem program into inspectable linked Markdown artifacts.",
+      "positive": ["invoke sem-run on semantic text or a Sem program"],
+      "negative": ["compile without execution", "coordinate repository delivery"],
+      "adjacent": ["sem-compile", "sem-present", "dp-solve", "phase-orchestrator"]
+    }
+  ]
+}

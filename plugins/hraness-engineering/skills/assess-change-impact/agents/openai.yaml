@@ -1,0 +1,4 @@
+interface:
+  display_name: "Assess Change Impact"
+  short_description: "Find blast radius and validation needs"
+  default_prompt: "Use $assess-change-impact to evaluate what this change could break and how to prove it safe."

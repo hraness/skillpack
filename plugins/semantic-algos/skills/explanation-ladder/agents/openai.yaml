@@ -1,0 +1,6 @@
+interface:
+  display_name: "Explanation Ladder"
+  short_description: "Explain one topic through five deepening levels"
+  default_prompt: "Use $explanation-ladder to explain this topic through five connected levels."
+policy:
+  allow_implicit_invocation: false

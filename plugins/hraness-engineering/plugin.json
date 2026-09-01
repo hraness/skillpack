@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hraness-engineering",
+  "version": "0.1.0",
+  "description": "MECE engineering analysis, verification, testing, performance, documentation, and refactoring workflows.",
+  "author": {
+    "name": "Hraness"
+  },
+  "homepage": "https://github.com/hraness/skillpack/tree/main/plugins/hraness-engineering",
+  "repository": "https://github.com/hraness/skillpack",
+  "license": "MIT"
+}

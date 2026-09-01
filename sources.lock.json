@@ -1,0 +1,64 @@
+{
+  "$schema": "./catalog/sources.schema.json",
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "pstack",
+      "canonicalUrl": "https://github.com/cursor/plugins",
+      "revision": "b9ddc83c32972210b8a94d389130713e8eed346e",
+      "upstreamPaths": ["pstack/skills"],
+      "license": "MIT",
+      "localPaths": ["plugins/hraness-engineering/skills"],
+      "attribution": "PStack by Lauren Tan, copyright 2026 Lauren Tan."
+    },
+    {
+      "id": "code-orchestrator-upstream",
+      "canonicalUrl": "https://github.com/kousun12/code-orchestrator",
+      "revision": "989e49ba7b0d8cb922010272abe6748dd68a4adb",
+      "upstreamPaths": ["skills/write-phase-plan", "skills/phase-orchestrator", "skills/phase-implementer", "skills/phase-reviewer", "skills/phase-final-reviewer"],
+      "license": "MIT",
+      "localPaths": ["plugins/code-orchestrator/skills"],
+      "attribution": "Code Orchestrator by Rob Cheung, copyright 2026 Rob Cheung."
+    },
+    {
+      "id": "hraness-jungle-orchestration",
+      "canonicalUrl": "https://github.com/hraness/jungle",
+      "revision": "4904c3dc9dbf41845fa2d5e4dfc02af90bb131c4",
+      "upstreamPaths": ["skills/write-phase-plan", "skills/phase-orchestrator", "skills/phase-implementer", "skills/phase-reviewer", "skills/phase-final-reviewer"],
+      "license": "LicenseRef-Hraness-Jungle-Repository",
+      "localPaths": ["plugins/code-orchestrator/skills"],
+      "attribution": "Hraness Jungle orchestration workflow adaptation."
+    },
+    {
+      "id": "semantic-algos-permission",
+      "canonicalUrl": "https://github.com/kousun12/semantic-algos",
+      "revision": "b73e650ce66a89c518c95e4a57e7f33af7cb8145",
+      "upstreamPaths": [
+        "skills/analogy-transfer/SKILL.md",
+        "skills/assumption-audit/SKILL.md",
+        "skills/counterfactual/SKILL.md",
+        "skills/decision-matrix/SKILL.md",
+        "skills/dp-solve/SKILL.md",
+        "skills/explanation-ladder/SKILL.md",
+        "skills/first-principles-thinking/SKILL.md",
+        "skills/five-whys/SKILL.md",
+        "skills/golden-circle/SKILL.md",
+        "skills/inversion/SKILL.md",
+        "skills/joke/SKILL.md",
+        "skills/ladder-of-abstraction/SKILL.md",
+        "skills/lyric/SKILL.md",
+        "skills/n-whys/SKILL.md",
+        "skills/nietzche-ladder/SKILL.md",
+        "skills/parable/SKILL.md",
+        "skills/question-forge/SKILL.md",
+        "skills/sem-compile",
+        "skills/sem-present",
+        "skills/sem-run"
+      ],
+      "license": "LicenseRef-Permission-Rob-Cheung",
+      "localPaths": ["plugins/semantic-algos/skills"],
+      "attribution": "Semantic Algos by Rob Cheung.",
+      "permissionNote": "Included with the author's permission; no upstream license file existed at the pinned revision."
+    }
+  ]
+}

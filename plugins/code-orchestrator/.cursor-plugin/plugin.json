@@ -1,0 +1,12 @@
+{
+  "name": "code-orchestrator",
+  "version": "0.1.0",
+  "description": "Portable phase planning and repository delivery adapted from Rob Cheung's Code Orchestrator.",
+  "author": {
+    "name": "Rob Cheung and Hraness"
+  },
+  "homepage": "https://github.com/hraness/skillpack/tree/main/plugins/code-orchestrator",
+  "repository": "https://github.com/hraness/skillpack",
+  "license": "MIT",
+  "skills": "./skills/"
+}

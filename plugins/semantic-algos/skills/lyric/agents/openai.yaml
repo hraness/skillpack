@@ -1,0 +1,6 @@
+interface:
+  display_name: "Lyric"
+  short_description: "Turn a tension into an original poem or lyric"
+  default_prompt: "Use $lyric to turn this question or tension into an original poem or song lyric."
+policy:
+  allow_implicit_invocation: false

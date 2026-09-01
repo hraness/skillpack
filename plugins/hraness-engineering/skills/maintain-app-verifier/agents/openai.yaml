@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain App Verifier"
+  short_description: "Audit and repair verifier drift"
+  default_prompt: "Use $maintain-app-verifier to audit this existing app verifier and correct proven drift."

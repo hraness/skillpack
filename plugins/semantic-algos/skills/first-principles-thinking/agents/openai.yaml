@@ -1,0 +1,6 @@
+interface:
+  display_name: "First Principles Thinking"
+  short_description: "Rebuild a question from defensible primitives"
+  default_prompt: "Use $first-principles-thinking to strip inherited assumptions and rebuild this from fundamentals."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Docs Maintainer"
+  short_description: "Keep repository documentation accurate"
+  default_prompt: "Use $docs-maintainer to update these docs against the repository's current sources of truth."

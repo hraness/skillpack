@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hraness skill routing fixtures",
+  "type": "object",
+  "required": ["schemaVersion", "cases"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "prompt", "expected", "excluded"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "kind": { "enum": ["positive", "negative", "pairwise"] },
+          "prompt": { "type": "string", "minLength": 12 },
+          "expected": { "type": "array", "maxItems": 1, "items": { "type": "string" } },
+          "excluded": { "type": "array", "items": { "type": "string" } },
+          "candidates": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

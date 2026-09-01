@@ -1,0 +1,6 @@
+interface:
+  display_name: "Sem Present"
+  short_description: "Project one Sem run into a validated view bundle"
+  default_prompt: "Use $sem-present on this exact Sem run directory to create a validated view bundle."
+policy:
+  allow_implicit_invocation: false

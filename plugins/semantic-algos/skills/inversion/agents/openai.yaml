@@ -1,0 +1,6 @@
+interface:
+  display_name: "Inversion"
+  short_description: "Turn guaranteed failure modes into safeguards"
+  default_prompt: "Use $inversion to identify how this would fail and convert the strongest failure modes into guards."
+policy:
+  allow_implicit_invocation: false

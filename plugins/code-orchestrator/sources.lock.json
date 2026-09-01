@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "code-orchestrator-upstream",
+      "repository": "https://github.com/kousun12/code-orchestrator",
+      "revision": "989e49ba7b0d8cb922010272abe6748dd68a4adb",
+      "license": "MIT",
+      "author": "Rob Cheung",
+      "paths": [
+        "skills/write-phase-plan",
+        "skills/phase-orchestrator",
+        "skills/phase-implementer",
+        "skills/phase-reviewer",
+        "skills/phase-final-reviewer"
+      ]
+    },
+    {
+      "id": "hraness-jungle-adaptation",
+      "repository": "https://github.com/hraness/jungle",
+      "revision": "4904c3dc9dbf41845fa2d5e4dfc02af90bb131c4",
+      "license": "repository license",
+      "paths": [
+        "skills/write-phase-plan",
+        "skills/phase-orchestrator",
+        "skills/phase-implementer",
+        "skills/phase-reviewer",
+        "skills/phase-final-reviewer"
+      ]
+    }
+  ],
+  "skills": [
+    {
+      "name": "write-phase-plan",
+      "sources": [
+        "code-orchestrator-upstream:skills/write-phase-plan",
+        "hraness-jungle-adaptation:skills/write-phase-plan"
+      ]
+    },
+    {
+      "name": "phase-orchestrator",
+      "sources": [
+        "code-orchestrator-upstream:skills/phase-orchestrator",
+        "code-orchestrator-upstream:skills/phase-implementer",
+        "code-orchestrator-upstream:skills/phase-reviewer",
+        "code-orchestrator-upstream:skills/phase-final-reviewer",
+        "hraness-jungle-adaptation:skills/phase-orchestrator",
+        "hraness-jungle-adaptation:skills/phase-implementer",
+        "hraness-jungle-adaptation:skills/phase-reviewer",
+        "hraness-jungle-adaptation:skills/phase-final-reviewer"
+      ]
+    }
+  ]
+}

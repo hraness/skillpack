@@ -1,0 +1,11 @@
+{
+  "name": "hra-skillpack",
+  "version": "0.1.0",
+  "description": "Audit, adopt, detect drift in, and safely repair the Hraness Skillpack.",
+  "author": {
+    "name": "Hraness contributors"
+  },
+  "license": "MIT",
+  "keywords": ["agent-skills", "audit", "portability", "provenance"],
+  "skills": "./skills/"
+}

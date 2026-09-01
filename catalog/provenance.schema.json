@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hraness skill provenance",
+  "type": "object",
+  "required": ["schemaVersion", "skills"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "classification", "localPaths"],
+        "properties": {
+          "name": { "type": "string" },
+          "classification": { "enum": ["original", "adapted"] },
+          "sourceIds": { "type": "array", "items": { "type": "string" } },
+          "localPaths": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "note": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

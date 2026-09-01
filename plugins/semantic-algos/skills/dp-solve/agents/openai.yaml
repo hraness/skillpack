@@ -1,0 +1,6 @@
+interface:
+  display_name: "DP Solve"
+  short_description: "Solve through reusable semantic subproblems"
+  default_prompt: "Use $dp-solve to decompose this question into overlapping subproblems and synthesize the answer."
+policy:
+  allow_implicit_invocation: false

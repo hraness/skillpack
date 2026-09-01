@@ -1,0 +1,56 @@
+{
+  "name": "hraness-skillpack",
+  "interface": {
+    "displayName": "Hraness Skillpack"
+  },
+  "plugins": [
+    {
+      "name": "hra-skillpack",
+      "source": {
+        "source": "local",
+        "path": "./plugins/hra-skillpack"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "hraness-engineering",
+      "source": {
+        "source": "local",
+        "path": "./plugins/hraness-engineering"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "code-orchestrator",
+      "source": {
+        "source": "local",
+        "path": "./plugins/code-orchestrator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "semantic-algos",
+      "source": {
+        "source": "local",
+        "path": "./plugins/semantic-algos"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Semantic Code Analysis"
+  short_description: "Trace and explain current code behavior"
+  default_prompt: "Use $semantic-code-analysis to explain how this subsystem behaves, with source evidence."

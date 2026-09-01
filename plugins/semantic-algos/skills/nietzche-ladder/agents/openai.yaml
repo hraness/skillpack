@@ -1,0 +1,6 @@
+interface:
+  display_name: "Nietzsche Ladder"
+  short_description: "Move through inheritance, refusal, and creation"
+  default_prompt: "Use $nietzche-ladder to examine this topic through Camel, Lion, and Child."
+policy:
+  allow_implicit_invocation: false

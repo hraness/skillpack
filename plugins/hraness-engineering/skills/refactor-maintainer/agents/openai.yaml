@@ -1,0 +1,4 @@
+interface:
+  display_name: "Refactor Maintainer"
+  short_description: "Refactor while preserving behavior"
+  default_prompt: "Use $refactor-maintainer to simplify this code while preserving its observable behavior."

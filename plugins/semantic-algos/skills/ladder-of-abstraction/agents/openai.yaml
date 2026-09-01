@@ -1,0 +1,6 @@
+interface:
+  display_name: "Ladder Of Abstraction"
+  short_description: "Move between examples, patterns, and principles"
+  default_prompt: "Use $ladder-of-abstraction to move this idea between concrete cases and governing principles."
+policy:
+  allow_implicit_invocation: false

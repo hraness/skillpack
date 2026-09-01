@@ -1,0 +1,4 @@
+interface:
+  display_name: "Performance Investigator"
+  short_description: "Measure and diagnose performance problems"
+  default_prompt: "Use $performance-investigator to measure this performance problem, find its cause, and verify any improvement."

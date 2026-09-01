@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create App Verifier"
+  short_description: "Build a safe real-app verification skill"
+  default_prompt: "Use $create-app-verifier to create and prove a project-local verifier for this application."

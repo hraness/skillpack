@@ -1,0 +1,12 @@
+{
+  "name": "semantic-algos",
+  "version": "0.1.0",
+  "description": "Explicit semantic reasoning commands by Rob Cheung, adapted with permission.",
+  "author": {
+    "name": "Rob Cheung and Hraness"
+  },
+  "homepage": "https://github.com/hraness/skillpack/tree/main/plugins/semantic-algos",
+  "repository": "https://github.com/hraness/skillpack",
+  "skills": "./cursor-explicit-skills/",
+  "commands": "./commands/"
+}

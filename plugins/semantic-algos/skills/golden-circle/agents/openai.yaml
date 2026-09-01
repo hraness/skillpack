@@ -1,0 +1,6 @@
+interface:
+  display_name: "Golden Circle"
+  short_description: "Align purpose, method, and concrete output"
+  default_prompt: "Use $golden-circle to clarify the Why, How, and What of this idea and test their alignment."
+policy:
+  allow_implicit_invocation: false

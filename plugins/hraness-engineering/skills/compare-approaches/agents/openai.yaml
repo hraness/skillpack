@@ -1,0 +1,4 @@
+interface:
+  display_name: "Compare Approaches"
+  short_description: "Compare designs and recommend one"
+  default_prompt: "Use $compare-approaches to compare the viable designs for this decision and recommend one."

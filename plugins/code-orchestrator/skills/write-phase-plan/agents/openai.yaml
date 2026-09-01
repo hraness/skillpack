@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write Phase Plan"
+  short_description: "Prepare dependency-ordered implementation phases"
+  default_prompt: "Use $write-phase-plan to turn this specification into a dependency-ordered implementation plan."

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Decision Matrix"
+  short_description: "Compare named options with sensitivity analysis"
+  default_prompt: "Use $decision-matrix to compare these options with explicit criteria, weights, and sensitivity."
+policy:
+  allow_implicit_invocation: false

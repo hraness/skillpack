@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reconstruct Rationale"
+  short_description: "Recover design intent from repository history"
+  default_prompt: "Use $reconstruct-rationale to determine why this design exists and calibrate the evidence."

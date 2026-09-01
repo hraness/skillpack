@@ -1,0 +1,6 @@
+.DS_Store
+node_modules/
+tmp/
+sem-programs/
+sem-runs/
+*.log

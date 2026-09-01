@@ -1,0 +1,39 @@
+{
+  "name": "hraness-engineering",
+  "version": "0.1.0",
+  "description": "MECE engineering analysis, verification, testing, performance, documentation, and refactoring workflows for Codex.",
+  "author": {
+    "name": "Hraness",
+    "url": "https://github.com/hraness"
+  },
+  "homepage": "https://github.com/hraness/skillpack/tree/main/plugins/hraness-engineering",
+  "repository": "https://github.com/hraness/skillpack",
+  "license": "MIT",
+  "keywords": [
+    "agent-skills",
+    "engineering",
+    "verification",
+    "testing",
+    "performance"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Hraness Engineering",
+    "shortDescription": "Use focused engineering workflows without routing overlap.",
+    "longDescription": "Maps features, explains code and rationale, assesses change impact, compares approaches, builds and maintains app verifiers, engineers tests, investigates performance, maintains docs, and performs behavior-preserving refactors.",
+    "developerName": "Hraness",
+    "category": "Productivity",
+    "capabilities": [
+      "Repository analysis",
+      "App verification",
+      "Test engineering",
+      "Performance investigation",
+      "Documentation and refactoring"
+    ],
+    "defaultPrompt": [
+      "Map this repository's user-visible features and proof paths.",
+      "Create a safe verifier for this application.",
+      "Assess the blast radius of this proposed change."
+    ]
+  }
+}

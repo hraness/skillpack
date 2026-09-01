@@ -1,0 +1,6 @@
+interface:
+  display_name: "Joke"
+  short_description: "Turn a contradiction into an original joke"
+  default_prompt: "Use $joke to turn this situation into a compact original joke."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Assumption Audit"
+  short_description: "Find and test load-bearing assumptions"
+  default_prompt: "Use $assumption-audit to expose and rank the assumptions in this claim or plan."
+policy:
+  allow_implicit_invocation: false

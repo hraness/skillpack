@@ -1,0 +1,4 @@
+interface:
+  display_name: "Phase Orchestrator"
+  short_description: "Execute phased work with bounded agent lanes"
+  default_prompt: "Use $phase-orchestrator to execute this implementation plan with bounded workers and independent review."

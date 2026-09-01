@@ -1,0 +1,6 @@
+interface:
+  display_name: "Sem Run"
+  short_description: "Run Sem programs as isolated semantic steps"
+  default_prompt: "Use $sem-run to execute this semantic program as an inspectable Markdown run."
+policy:
+  allow_implicit_invocation: false

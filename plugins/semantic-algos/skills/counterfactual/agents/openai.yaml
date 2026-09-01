@@ -1,0 +1,6 @@
+interface:
+  display_name: "Counterfactual"
+  short_description: "Propagate one alternate fact with confidence"
+  default_prompt: "Use $counterfactual to test how this outcome changes under one minimal intervention."
+policy:
+  allow_implicit_invocation: false

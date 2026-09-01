@@ -1,0 +1,6 @@
+interface:
+  display_name: "Question Forge"
+  short_description: "Replace a stuck question with the one worth asking"
+  default_prompt: "Use $question-forge to diagnose this question and return the harder question worth asking."
+policy:
+  allow_implicit_invocation: false

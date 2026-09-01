@@ -1,0 +1,36 @@
+{
+  "name": "code-orchestrator",
+  "version": "0.1.0",
+  "description": "Portable phase planning and multi-phase repository delivery adapted from Rob Cheung's Code Orchestrator.",
+  "author": {
+    "name": "Rob Cheung and Hraness",
+    "url": "https://github.com/kousun12/code-orchestrator"
+  },
+  "homepage": "https://github.com/hraness/skillpack/tree/main/plugins/code-orchestrator",
+  "repository": "https://github.com/hraness/skillpack",
+  "license": "MIT",
+  "keywords": [
+    "agent-skills",
+    "phase-plan",
+    "orchestration",
+    "code-review"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Code Orchestrator",
+    "shortDescription": "Plan and deliver reviewable repository phases.",
+    "longDescription": "Writes implementation-ready phase plans and coordinates bounded implementer and reviewer roles while preserving the repository's scheduler, validation gates, and delivery policy.",
+    "developerName": "Rob Cheung and Hraness",
+    "category": "Productivity",
+    "capabilities": [
+      "Phase planning",
+      "Multi-agent delivery",
+      "Independent review",
+      "Final integration"
+    ],
+    "defaultPrompt": [
+      "Turn this approved design into a phased implementation plan.",
+      "Execute this phase plan through implementation, review, and final validation."
+    ]
+  }
+}

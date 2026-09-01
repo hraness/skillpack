@@ -1,0 +1,4 @@
+interface:
+  display_name: "Test Engineer"
+  short_description: "Design reliable regression tests"
+  default_prompt: "Use $test-engineer to create the smallest reliable tests for this behavior."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repository Feature Map"
+  short_description: "Map repository behavior and ownership"
+  default_prompt: "Use $repository-feature-map to map this repository's major capabilities and verification surfaces."

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/kousun12/semantic-algos",
+    "revision": "b73e650ce66a89c518c95e4a57e7f33af7cb8145",
+    "author": "Rob Cheung",
+    "terms": "used with permission; no upstream license file at the pinned revision"
+  },
+  "skills": [
+    { "name": "analogy-transfer", "sourcePath": "skills/analogy-transfer/SKILL.md" },
+    { "name": "assumption-audit", "sourcePath": "skills/assumption-audit/SKILL.md" },
+    { "name": "counterfactual", "sourcePath": "skills/counterfactual/SKILL.md" },
+    { "name": "decision-matrix", "sourcePath": "skills/decision-matrix/SKILL.md" },
+    { "name": "dp-solve", "sourcePath": "skills/dp-solve/SKILL.md" },
+    { "name": "explanation-ladder", "sourcePath": "skills/explanation-ladder/SKILL.md" },
+    { "name": "first-principles-thinking", "sourcePath": "skills/first-principles-thinking/SKILL.md" },
+    { "name": "golden-circle", "sourcePath": "skills/golden-circle/SKILL.md" },
+    { "name": "inversion", "sourcePath": "skills/inversion/SKILL.md" },
+    { "name": "joke", "sourcePath": "skills/joke/SKILL.md" },
+    { "name": "ladder-of-abstraction", "sourcePath": "skills/ladder-of-abstraction/SKILL.md" },
+    { "name": "lyric", "sourcePath": "skills/lyric/SKILL.md" },
+    {
+      "name": "n-whys",
+      "sourcePath": "skills/n-whys/SKILL.md",
+      "alsoAdapts": "skills/five-whys/SKILL.md"
+    },
+    { "name": "nietzche-ladder", "sourcePath": "skills/nietzche-ladder/SKILL.md" },
+    { "name": "parable", "sourcePath": "skills/parable/SKILL.md" },
+    { "name": "question-forge", "sourcePath": "skills/question-forge/SKILL.md" },
+    { "name": "sem-compile", "sourcePath": "skills/sem-compile" },
+    { "name": "sem-present", "sourcePath": "skills/sem-present" },
+    { "name": "sem-run", "sourcePath": "skills/sem-run" }
+  ]
+}
