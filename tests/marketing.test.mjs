@@ -71,6 +71,12 @@ describe("public product story", () => {
     }
   });
 
+  test("skillpack admin first proof runs from the repository root", async () => {
+    const readme = await readFile(join(root, "plugins", "skillpack-admin", "README.md"), "utf8");
+    expect(readme).toContain("bun plugins/skillpack-admin/scripts/audit.mjs --root .");
+    expect(readme).not.toContain("bun scripts/audit.mjs --root ../..");
+  });
+
   test("host descriptions preserve each pack's product promise", async () => {
     const packageMetadata = await json("package.json");
     const copilot = await json(".github/plugin/marketplace.json");

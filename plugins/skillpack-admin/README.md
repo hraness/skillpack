@@ -11,7 +11,7 @@ and perform a backup-first repair without deleting extra destination files.
 Run a read-only source audit:
 
 ```sh
-bun scripts/audit.mjs --root ../..
+bun plugins/skillpack-admin/scripts/audit.mjs --root .
 ```
 
 The result inventories discovered skills and reports validation or destination
