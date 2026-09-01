@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1 - 2026-09-01
+
+- Reframe the root and all four plugin READMEs around a concrete result, first
+  proof, working model, interfaces, evidence, boundaries, questions, and a
+  source-first action.
+- Align package, skills.sh, Agent Plugin, Codex, Cursor, Copilot, and OpenAI
+  listing descriptions around the same bounded product promises.
+- Add focused checks for the 33-skill inventory, proof-led public navigation,
+  and cross-host description boundaries.
+
 ## 0.2.0 - 2026-09-01
 
 - Rename the distribution-management plugin and skill from the misleading

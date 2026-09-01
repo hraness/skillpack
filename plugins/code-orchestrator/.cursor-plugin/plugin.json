@@ -1,7 +1,7 @@
 {
   "name": "code-orchestrator",
-  "version": "0.2.0",
-  "description": "Portable phase planning and repository delivery adapted from Rob Cheung's Code Orchestrator.",
+  "version": "0.2.1",
+  "description": "Turn an approved direction into a plan or independently reviewed phase delivery.",
   "author": {
     "name": "Rob Cheung and Hraness"
   },

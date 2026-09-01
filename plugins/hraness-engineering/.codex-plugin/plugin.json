@@ -1,7 +1,7 @@
 {
   "name": "hraness-engineering",
-  "version": "0.2.0",
-  "description": "MECE engineering analysis, verification, testing, performance, documentation, and refactoring workflows for Codex.",
+  "version": "0.2.1",
+  "description": "Source-auditable workflows that turn repository questions into bounded, evidence-led engineering work.",
   "author": {
     "name": "Hraness",
     "url": "https://github.com/hraness"
@@ -19,16 +19,16 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Repository Engineering by Hraness",
-    "shortDescription": "Focused workflows for repository engineering.",
-    "longDescription": "General-purpose repository workflows for feature mapping, code explanation, rationale, change impact, approach comparison, app verification, tests, performance, documentation, and behavior-preserving refactors.",
+    "shortDescription": "Turn repository questions into evidenced work.",
+    "longDescription": "Choose one bounded workflow for a repository map, current-behavior explanation, rationale, change impact, approach decision, app verification, test, measurement, document, or behavior-preserving refactor.",
     "developerName": "Hraness",
     "category": "Productivity",
     "capabilities": [
-      "Repository analysis",
+      "Evidence-led repository analysis",
       "App verification",
       "Test engineering",
       "Performance investigation",
-      "Documentation and refactoring"
+      "Documentation and safe refactoring"
     ],
     "defaultPrompt": [
       "Map this repository's user-visible features and proof paths.",

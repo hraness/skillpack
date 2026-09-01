@@ -4,7 +4,7 @@
   "groupings": [
     {
       "title": "Repository Engineering",
-      "description": "General-purpose repository understanding, verification, tests, performance, docs, and refactoring.",
+      "description": "Turn one repository question into a bounded map, explanation, proof, document, measurement, test, or safe refactor.",
       "skills": [
         "repository-feature-map",
         "semantic-code-analysis",
@@ -21,12 +21,12 @@
     },
     {
       "title": "Phased Delivery",
-      "description": "Plan and execute explicitly multi-phase repository work with independent review.",
+      "description": "Turn an approved direction into a dependency-ordered plan or independently reviewed phase delivery.",
       "skills": ["write-phase-plan", "phase-orchestrator"]
     },
     {
       "title": "Semantic Algorithms",
-      "description": "Explicit semantic transforms and inspectable Sem programs by Rob Cheung.",
+      "description": "Run a named semantic transform or an inspectable Sem computation—only when explicitly invoked.",
       "skills": [
         "analogy-transfer",
         "assumption-audit",
@@ -51,7 +51,7 @@
     },
     {
       "title": "Distribution Administration",
-      "description": "Optional lifecycle tooling for this repository; unrelated to using the HRA product.",
+      "description": "Audit or adopt this distribution with explicit roots, dry-run defaults, and backup-first repair.",
       "skills": ["skillpack-admin"]
     }
   ]

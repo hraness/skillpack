@@ -1,7 +1,7 @@
 {
   "name": "skillpack-admin",
-  "version": "0.2.0",
-  "description": "Optional administration for this Hraness Agent Skills distribution; not an HRA product workflow.",
+  "version": "0.2.1",
+  "description": "Audit and repair this skills distribution with explicit roots and backup-first writes.",
   "author": {
     "name": "Hraness contributors"
   },

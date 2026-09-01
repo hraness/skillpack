@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "hraness-engineering",
-  "version": "0.2.0",
-  "description": "MECE engineering analysis, verification, testing, performance, documentation, and refactoring workflows.",
+  "version": "0.2.1",
+  "description": "Source-auditable workflows that turn repository questions into bounded maps, explanations, proof, tests, measurements, docs, or safe refactors.",
   "author": {
     "name": "Hraness"
   },

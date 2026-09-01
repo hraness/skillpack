@@ -1,7 +1,7 @@
 {
   "name": "code-orchestrator",
-  "version": "0.2.0",
-  "description": "Portable phase planning and multi-phase repository delivery adapted from Rob Cheung's Code Orchestrator.",
+  "version": "0.2.1",
+  "description": "Turn approved multi-phase repository work into a reviewable plan or independently reviewed delivery.",
   "author": {
     "name": "Rob Cheung and Hraness",
     "url": "https://github.com/kousun12/code-orchestrator"
@@ -18,8 +18,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Phased Delivery",
-    "shortDescription": "Plan and deliver reviewable repository phases.",
-    "longDescription": "Writes implementation-ready phase plans and coordinates bounded implementer and reviewer roles while preserving the repository's scheduler, validation gates, and delivery policy.",
+    "shortDescription": "Plan and deliver independently reviewed phases.",
+    "longDescription": "Turn an approved direction into an implementation-ready phase plan, or execute an existing plan through bounded implementation, independent review, join gates, and final integration while preserving repository and host policy.",
     "developerName": "Rob Cheung and Hraness",
     "category": "Productivity",
     "capabilities": [
