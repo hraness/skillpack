@@ -15,7 +15,7 @@ The plugin IDs `hraness-engineering`, `code-orchestrator`, and
 
 ## Codex migration
 
-Remove the old admin plugin, update the marketplace to the versioned v0.2.0
+Remove the old admin plugin, update the marketplace to the versioned v0.2.1
 release, and install the renamed plugin only if you use its administration
 features:
 
@@ -25,7 +25,7 @@ codex plugin remove hraness-engineering@hraness-skillpack
 codex plugin remove code-orchestrator@hraness-skillpack
 codex plugin remove semantic-algos@hraness-skillpack
 codex plugin marketplace remove hraness-skillpack
-codex plugin marketplace add hraness/skillpack --ref v0.2.0
+codex plugin marketplace add hraness/skillpack --ref v0.2.1
 codex plugin add hraness-engineering@hraness-skillpack
 codex plugin add code-orchestrator@hraness-skillpack
 codex plugin add semantic-algos@hraness-skillpack
@@ -33,7 +33,7 @@ codex plugin add skillpack-admin@hraness-skillpack
 codex plugin list --json
 ```
 
-The final list should report version `0.2.0` for all four plugins and no
+The final list should report version `0.2.1` for all four plugins and no
 `hra-skillpack@hraness-skillpack` entry. If the old installation contained
 only a subset, apply the same remove/re-add sequence only to that subset and
 omit optional `skillpack-admin` if its administration features are not needed.

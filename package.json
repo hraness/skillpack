@@ -1,8 +1,8 @@
 {
   "name": "hraness-skillpack",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
-  "description": "Portable Agent Skills for repository engineering, phased delivery, and explicit semantic transforms.",
+  "description": "Source-auditable Agent Skills for bounded repository engineering, reviewed phased delivery, and explicit semantic reasoning.",
   "license": "MIT",
   "type": "module",
   "packageManager": "bun@1.3.14",

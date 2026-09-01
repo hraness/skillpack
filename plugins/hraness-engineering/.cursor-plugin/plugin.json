@@ -1,7 +1,7 @@
 {
   "name": "hraness-engineering",
-  "version": "0.2.0",
-  "description": "MECE engineering analysis, verification, testing, performance, documentation, and refactoring workflows.",
+  "version": "0.2.1",
+  "description": "Turn repository questions into bounded, evidence-led engineering work.",
   "author": {
     "name": "Hraness"
   },
