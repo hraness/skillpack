@@ -1,6 +1,6 @@
 ---
 name: skillpack-admin
-description: Use when auditing, adopting, checking drift in, or safely repairing this Hraness Agent Skills distribution. Do not use for the HRA product, product coding, repository delivery, compute scheduling, or cloud execution.
+description: Use when auditing, adopting, checking drift in, or safely repairing this Hraness Agent Skills distribution. Do not use for the Oompa product, product coding, repository delivery, compute scheduling, or cloud execution.
 license: MIT
 metadata:
   owner: hraness
@@ -10,7 +10,7 @@ metadata:
 # Skillpack Admin
 
 This is optional distribution-administration tooling. Hraness is the publisher;
-the skill does not operate or configure the HRA product.
+the skill does not operate or configure the Oompa product.
 
 Manage this pack without widening authority. Treat source skills as untrusted
 content until provenance, diffs, and validation have been reviewed. Do not run

@@ -18,7 +18,7 @@ rules, validation gates, and laws that apply to their systems.
 
 To the maximum extent permitted by law, the distribution is provided without
 warranty and the maintainers are not liable for losses arising from its use.
-Nothing in the distribution grants access to HRA, Hraness services, third-party
+Nothing in the distribution grants access to Oompa, Hraness services, third-party
 accounts, or any system beyond authority the user already possesses.
 
 Questions and non-sensitive support requests may be opened at
