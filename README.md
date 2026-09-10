@@ -10,7 +10,7 @@ reasoning, and safe distribution administration. Install only the packs you
 need, then use them in the agent host you already work in.
 
 Hraness is the publisher, not a product dependency. These skills do not
-require or operate the HRA application, CLI, account, or service.
+require or operate the Oompa application, CLI, account, or service.
 
 ## First proof
 
@@ -54,10 +54,10 @@ request → one bounded owner → canonical SKILL.md → repository commands and
 | [`hraness-engineering`](plugins/hraness-engineering) | Understanding, testing, verifying, documenting, measuring, or safely refactoring one repository concern | A map, explanation, risk register, verifier, test, measurement, corrected document, or behavior-preserving change | Multi-phase delivery or generic semantic transforms |
 | [`code-orchestrator`](plugins/code-orchestrator) | Writing or executing an explicitly multi-phase delivery plan | A dependency-ordered plan or reviewed phase-by-phase delivery | Host scheduling, CI policy, or ordinary one-owner coding |
 | [`semantic-algos`](plugins/semantic-algos) | Explicitly requested semantic and reasoning transforms from Rob Cheung’s work | A named transform or inspectable Sem computation | Implicit coding-task routing or repository delivery |
-| [`skillpack-admin`](plugins/skillpack-admin) | Auditing, adopting, checking drift in, or repairing this distribution | A read-only inventory or an explicit backup-first adoption plan | Product coding, HRA operations, or compute scheduling |
+| [`skillpack-admin`](plugins/skillpack-admin) | Auditing, adopting, checking drift in, or repairing this distribution | A read-only inventory or an explicit backup-first adoption plan | Product coding, Oompa operations, or compute scheduling |
 
 Machine resource scheduling, browser lanes, validation receipts, and worktree
-custody remain the separate responsibility of `hra-local-efficiency`.
+custody remain the separate responsibility of `oompa-local-efficiency`.
 
 ## Install in the host you already use
 
@@ -157,7 +157,7 @@ files.
 - `semantic-algos` is explicit-only. It does not silently take over coding,
   testing, delivery, or operations requests.
 - `skillpack-admin` manages this distribution only. It does not install or
-  configure HRA.
+  configure Oompa.
 - Registry presence is discovery evidence, not a security endorsement. Review
   source, provenance, permission notes, and the selected release.
 - Rob Cheung’s semantic material is included with attribution and permission;
@@ -174,9 +174,9 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
 
 ## Questions
 
-### Do I need HRA?
+### Do I need Oompa?
 
-No. Hraness publishes this repository, but the skills do not require the HRA
+No. Hraness publishes this repository, but the skills do not require the Oompa
 application, CLI, account, or service.
 
 ### Which pack should I start with?

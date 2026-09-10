@@ -46,7 +46,7 @@ repository-required validation.
 
 The canonical interface is each `skills/<name>/SKILL.md` directory. Codex,
 Cursor, Agent Plugins-compatible hosts, and registry listings discover the
-same sources through thin metadata adapters. No HRA application, CLI, account,
+same sources through thin metadata adapters. No Oompa application, CLI, account,
 or service is required.
 
 ## Evidence

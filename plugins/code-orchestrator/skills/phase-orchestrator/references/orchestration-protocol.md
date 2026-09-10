@@ -39,10 +39,10 @@ Do not repeat a focused command whose exact inputs did not change and whose
 evidence is complete. Run the repository's required aggregate/final gate after
 the complete tree converges.
 
-## HRA scheduling boundary
+## Oompa scheduling boundary
 
 This protocol schedules people and reasoning, not machine resources. If the
-target instructions require `hra-host-run`, resolve and invoke that documented
+target instructions require `oompa-host-run`, resolve and invoke that documented
 wrapper with the complete unchanged child command and correct lane. Do not run
 the child directly after a host-access failure, add an unconditional approval,
 or weaken a repository scheduler nested below it.

@@ -33,7 +33,7 @@ The plan must:
 - mark every phase `Not started` and include an empty implementation log.
 
 Do not mark overlapping phases parallel. Do not add a new scheduler. When the
-repository uses HRA local efficiency, record its required host lane for broad
+repository uses Oompa local efficiency, record its required host lane for broad
 or final checks without rewriting the underlying repository command.
 
 Stop after writing or updating the plan unless the user also asks to execute
