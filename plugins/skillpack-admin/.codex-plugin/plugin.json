@@ -14,7 +14,7 @@
   "interface": {
     "displayName": "Hraness Skillpack Admin",
     "shortDescription": "Audit first; repair only with a backup.",
-    "longDescription": "Inventory this distribution or an explicit destination, preview adoption, detect drift, and perform a backup-first repair without deleting extra destination files. It does not operate the HRA product.",
+    "longDescription": "Inventory this distribution or an explicit destination, preview adoption, detect drift, and perform a backup-first repair without deleting extra destination files. It does not operate the Oompa product.",
     "developerName": "Hraness contributors",
     "category": "Productivity",
     "capabilities": ["Pack audit", "Machine adoption audit", "Backup-first repair"],

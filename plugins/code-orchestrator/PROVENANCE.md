@@ -15,7 +15,7 @@ The portable Hraness adaptation also incorporates the current Jungle workflow
 at the locally available `origin/main` revision
 `4904c3dc9dbf41845fa2d5e4dfc02af90bb131c4`. Hraness changes consolidate the
 three worker skills into hidden references, preserve repository-owned delivery
-gates, and explicitly defer heavyweight scheduling to the installed HRA local
+gates, and explicitly defer heavyweight scheduling to the installed Oompa local
 efficiency policy.
 
 The exact source records are machine-readable in [sources.lock.json](sources.lock.json).

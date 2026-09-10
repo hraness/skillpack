@@ -5,7 +5,7 @@ description: >-
   workers, independent review, join gates, validation, and final integration.
   Use when the user explicitly asks for delegated or multi-agent execution of
   a phase plan. Do not use for ordinary single-owner coding, plan authoring,
-  semantic reasoning, or as a replacement for HRA scheduling and repo gates.
+  semantic reasoning, or as a replacement for Oompa scheduling and repo gates.
 license: MIT
 ---
 
@@ -30,7 +30,7 @@ owner. Use one owner for each external CI, deployment, or provider wait.
 
 The target repository remains authoritative for tests, CI, commits, merge,
 release, and deployment. This skill never creates a second compute scheduler.
-When HRA local efficiency is installed or required, route broad and final work
+When Oompa local efficiency is installed or required, route broad and final work
 through its documented host wrapper and lane while preserving the exact child
 command. Never bypass the wrapper, weaken the gate, or hold a compute lease
 while waiting on external state.

@@ -50,7 +50,7 @@ runtime.
 ## Boundaries
 
 - The tool manages this skill distribution; it does not operate or configure
-  the HRA product.
+  the Oompa product.
 - It does not infer a personal skills directory. Supply the source and
   destination explicitly.
 - It does not edit marketplace configuration, install network dependencies,
@@ -69,7 +69,7 @@ before considering adoption or repair.
 No. It overlays reviewed source files after creating a backup and leaves extra
 destination files for explicit disposition.
 
-### Is this an HRA administration plugin?
+### Is this an Oompa administration plugin?
 
 No. Hraness publishes the pack, but this plugin manages only the pack’s
 installation state.

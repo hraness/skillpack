@@ -43,7 +43,7 @@ Repository rules, preserved behavior, delivery policy, and shared ownership.
 ## Validation design
 
 Name focused checks for each phase and the repository's aggregate/final gate
-after convergence. Never substitute a weaker public command. If an HRA host
+after convergence. Never substitute a weaker public command. If an Oompa host
 lane applies, record the lane separately from the unchanged child command.
 
 ## Runtime updates
