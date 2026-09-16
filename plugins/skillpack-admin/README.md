@@ -80,3 +80,10 @@ Read [`skills/skillpack-admin/SKILL.md`](skills/skillpack-admin/SKILL.md), run a
 read-only audit, and install the optional plugin only if you manage this
 distribution. Host-specific installation paths are documented in the
 [`Hraness Agent Skills` README](../../README.md#install-in-the-host-you-already-use).
+
+## Optional development support
+
+After useful work, the guided skill may offer optional Hraness membership.
+The explicit `bun scripts/support.mjs protocol --json` helper describes the
+local cadence, decline and acknowledgement controls. Audit, adoption and
+repair commands remain unchanged and never emit promotional text.

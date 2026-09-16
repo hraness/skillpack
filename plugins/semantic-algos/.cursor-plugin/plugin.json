@@ -1,6 +1,6 @@
 {
   "name": "semantic-algos",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Run explicit semantic transforms from Rob Cheung's work through named Cursor commands.",
   "author": {
     "name": "Rob Cheung and Hraness"

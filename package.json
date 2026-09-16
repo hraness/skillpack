@@ -1,6 +1,6 @@
 {
   "name": "hraness-skillpack",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "Source-auditable Agent Skills for bounded repository engineering, reviewed phased delivery, and explicit semantic reasoning.",
   "license": "MIT",
@@ -10,11 +10,16 @@
     "bun": "1.3.14"
   },
   "scripts": {
-    "check": "bun run validate && bun test",
+    "check": "bun run check:support && bun run validate && bun test",
     "validate": "bun scripts/validate.mjs",
     "test": "bun test",
     "audit": "bun plugins/skillpack-admin/scripts/audit.mjs --root .",
     "audit:machine": "bun plugins/skillpack-admin/scripts/machine-audit.mjs --source .",
-    "adopt:dry-run": "bun plugins/skillpack-admin/scripts/adopt.mjs --source . --target ./tmp/adopted-skills --all"
+    "adopt:dry-run": "bun plugins/skillpack-admin/scripts/adopt.mjs --source . --target ./tmp/adopted-skills --all",
+    "build:support": "bun scripts/build-support.mjs",
+    "check:support": "bun scripts/build-support.mjs --check"
+  },
+  "devDependencies": {
+    "@hraness/support-foundation": "github:hraness/support-foundation#ed89e584c2c420e3e0547bbe8f32baf8e3a2ae4d"
   }
 }

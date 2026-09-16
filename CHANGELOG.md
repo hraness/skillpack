@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2 - 2026-09-16
+
+- Add optional general Hraness development support to original distribution
+  guidance and the skillpack-admin closeout, with a self-contained shared helper.
+- Preserve all adapted skill instructions and read-only audit behavior.
+
 ## 0.2.1 - 2026-09-01
 
 - Reframe the root and all four plugin READMEs around a concrete result, first

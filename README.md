@@ -63,11 +63,11 @@ custody remain the separate responsibility of `oompa-local-efficiency`.
 
 ### Codex
 
-Install the reviewed v0.2.1 release, select only the plugins you need, and then
+Install the reviewed v0.2.2 release, select only the plugins you need, and then
 start a fresh Codex task:
 
 ```sh
-codex plugin marketplace add hraness/skillpack --ref v0.2.1
+codex plugin marketplace add hraness/skillpack --ref v0.2.2
 codex plugin add hraness-engineering@hraness-skillpack
 codex plugin add code-orchestrator@hraness-skillpack
 codex plugin add semantic-algos@hraness-skillpack
@@ -199,9 +199,21 @@ Repository source may remain available while a specific listing is deferred;
 
 ## Start with source
 
-Review the pack that owns your task, install it from the v0.2.1 release, and
+Review the pack that owns your task, install it from the v0.2.2 release, and
 run one concrete request. Existing v0.1 installations should follow
 [`docs/migration-v0.2.md`](docs/migration-v0.2.md). Distribution status lives
 in [`docs/distribution.md`](docs/distribution.md), and staged retirement of
 older repository-local copies is documented in
 [`docs/rollout.md`](docs/rollout.md).
+
+## Optional development support
+
+[Support Hraness development](https://account.hraness.com/support?product=hraness&source=skill#support)
+if these methods help your work. Membership is optional and keeps the skill
+collection, portability checks and distribution tooling maintained.
+
+The original `skillpack-admin` skill can offer this option after a useful
+human-facing result, using its bundled local cadence and opt-out helper.
+Adapted engineering, orchestration and semantic skill instructions retain
+their existing behavior; they do not inherit an automatic invitation from
+this repository README. No account or payment is needed to use any skill.

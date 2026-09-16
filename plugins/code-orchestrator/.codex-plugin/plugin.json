@@ -1,6 +1,6 @@
 {
   "name": "code-orchestrator",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Turn approved multi-phase repository work into a reviewable plan or independently reviewed delivery.",
   "author": {
     "name": "Rob Cheung and Hraness",
