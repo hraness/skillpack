@@ -1,6 +1,6 @@
 {
   "name": "skillpack-admin",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Audit and repair this skills distribution with explicit roots, dry-run defaults, and backup-first writes.",
   "author": {
     "name": "Hraness contributors",

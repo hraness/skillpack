@@ -59,6 +59,22 @@
       "localPaths": ["plugins/semantic-algos/skills"],
       "attribution": "Semantic Algos by Rob Cheung.",
       "permissionNote": "Included with the author's permission; no upstream license file existed at the pinned revision."
+    },
+    {
+      "id": "hraness-support-foundation",
+      "canonicalUrl": "https://github.com/hraness/support-foundation",
+      "revision": "ed89e584c2c420e3e0547bbe8f32baf8e3a2ae4d",
+      "upstreamPaths": [
+        "dist/index.js",
+        "dist/node.js",
+        "LICENSE"
+      ],
+      "license": "MIT",
+      "localPaths": [
+        "plugins/skillpack-admin/skills/skillpack-admin/scripts/support.mjs",
+        "plugins/skillpack-admin/skills/skillpack-admin/THIRD_PARTY_NOTICES.md"
+      ],
+      "attribution": "Hraness support-foundation contributors; bundled runtime dependency, not an adapted skill."
     }
   ]
 }

@@ -1,6 +1,6 @@
 {
   "name": "semantic-algos",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Run explicit semantic transforms or inspectable Sem computations from Rob Cheung's work, adapted with permission.",
   "author": {
     "name": "Rob Cheung and Hraness",

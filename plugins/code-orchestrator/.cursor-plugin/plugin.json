@@ -1,6 +1,6 @@
 {
   "name": "code-orchestrator",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Turn an approved direction into a plan or independently reviewed phase delivery.",
   "author": {
     "name": "Rob Cheung and Hraness"
