@@ -1,7 +1,7 @@
 {
   "name": "skillpack-admin",
   "version": "0.2.2",
-  "description": "Audit and repair this skills distribution with explicit roots, dry-run defaults, and backup-first writes.",
+  "description": "Audit, adopt, and repair installed copies of this skill pack, with previews by default and a backup before any repair.",
   "author": {
     "name": "Hraness contributors",
     "url": "https://github.com/hraness"
@@ -14,7 +14,7 @@
   "interface": {
     "displayName": "Hraness Skillpack Admin",
     "shortDescription": "Audit first; repair only with a backup.",
-    "longDescription": "Inventory this distribution or an explicit destination, preview adoption, detect drift, and perform a backup-first repair without deleting extra destination files. It does not operate the Oompa product.",
+    "longDescription": "One skill and its scripts: inventory this pack or a destination you name, preview adoption, detect drift, and repair a copy after backing it up, without deleting extra files in the destination.",
     "developerName": "Hraness contributors",
     "category": "Productivity",
     "capabilities": ["Pack audit", "Machine adoption audit", "Backup-first repair"],

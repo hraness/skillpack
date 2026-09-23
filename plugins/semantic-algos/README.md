@@ -1,95 +1,95 @@
 # Semantic Algos
 
-**Make the reasoning inspectable—only when you ask for it.**
+Semantic Algos packages 19 Agent Skills from Rob Cheung’s work, adapted with
+permission. Sixteen are named reasoning methods, such as an assumption audit,
+inversion, or first-principles thinking. The other three compile, run, and
+present a Sem computation over text you provide, so you can inspect each
+step. Each skill is meant to run only when you ask for it by name; Codex and
+Cursor enforce that, and other hosts follow the skill’s description.
 
-Semantic Algos packages 19 explicit semantic operators from Rob Cheung’s work
-as portable Agent Skills. Use a named operator for a bounded transform, or use
-the Sem workflow to compile, run, and present an inspectable computation over
-authorized text.
+## Try it
 
-## First proof
-
-Ask explicitly:
+Ask by name:
 
 > Use `$assumption-audit` to expose the load-bearing premises in this proposal.
 
-The operator returns an assumption register, keystone assumption, test agenda,
-and fallback. It does not silently route an ordinary coding or delivery
-request through semantic analysis.
+The skill returns the proposal’s assumptions, the one it depends on most, a
+way to test each, and a fallback. It is not for ordinary coding or delivery
+requests.
 
 ## How it works
 
-Two interfaces share one canonical source tree:
+The pack offers two ways to use the same skills:
 
 ```text
-named operator → bounded semantic transform → stated limits
+named method → one reasoning transform → its stated limits
 
-request → sem-compile → inspectable program → sem-run → linked artifacts → sem-present → disposable view
+request → sem-compile → program you can read → sem-run → linked Markdown files → sem-present → a view you can discard
 ```
 
-The pack includes explicit transforms for assumptions, inversion, first
-principles, counterfactuals, abstraction, explanations, decisions, questions,
-analogies, why-chains, dynamic-programming decomposition, the Golden Circle,
-parable, joke, lyric, and Nietzsche’s Camel–Lion–Child ladder. The `sem-*`
-skills compile, execute, and present declared computations without turning
-them into repository orchestration.
+The named methods cover assumptions, inversion, first principles,
+counterfactuals, abstraction, explanations, decisions, questions, analogies,
+why-chains, dynamic-programming decomposition, the Golden Circle, parable,
+joke, lyric, and Nietzsche’s camel, lion, and child ladder. The `sem-*` skills
+compile, execute, and present a declared computation without turning it into
+repository orchestration.
 
 ## Interfaces
 
-- In Codex, invoke a canonical skill explicitly as `$skill-name`.
-- In Cursor, invoke its thin command adapter as `/skill-name`.
-- Agent Skills-compatible hosts read the canonical `skills/` directories.
+- In Codex, invoke a skill by name as `$skill-name`.
+- In Cursor, invoke its command as `/skill-name`.
+- Agent Skills hosts read the `skills/` directories.
 
-Cursor’s `commands/` adapters point back to the same skill sources and contain
-no duplicate procedure. `cursor-explicit-skills/` intentionally suppresses
-automatic skill discovery so Cursor preserves the explicit-only contract.
+Cursor’s `commands/` files point back to the same skills and repeat none of
+their steps. `cursor-explicit-skills/` turns off automatic skill discovery in
+Cursor, so the skills run only when named there too.
 
-## Evidence
+## Checks
 
 - All 19 Codex skill metadata files set
   `policy.allow_implicit_invocation: false`.
-- Cursor command names map one-to-one to canonical skill directories.
-- `sem-compile`, `sem-run`, and `sem-present` keep checked contracts beside
-  their skill sources.
+- Each Cursor command maps to exactly one skill directory.
+- `sem-compile`, `sem-run`, and `sem-present` keep their format definitions
+  next to their skill files.
 - Routing fixtures exclude ordinary coding, repository analysis, testing,
   delivery, and operations.
 
 Pinned upstream paths and the permission record are documented in
 [`PROVENANCE.md`](PROVENANCE.md).
 
-## Boundaries
+## Limits
 
-- Invoke a semantic operator by name; the pack must not hijack ordinary work.
-- Semantic execution may write only its declared artifacts. It does not
-  authorize external effects.
-- Sem computation is not repository delivery, multi-agent orchestration, test
-  execution, or host scheduling.
+- Invoke a skill by name. The skills are not meant to take over ordinary work.
+- A Sem run may write only the files it declares. It does not authorize
+  actions outside them.
+- A Sem computation is not repository delivery, multi-agent orchestration,
+  test execution, or host scheduling.
 - The pinned upstream revision has no published license file. This adaptation
   is attributed to Rob Cheung and used with permission; it is not described as
   MIT-licensed.
 
 ## Questions
 
-### When should I use one operator instead of Sem?
+### When should I use one method instead of Sem?
 
-Use a named operator for one bounded transform. Use `sem-compile`, `sem-run`,
-and optionally `sem-present` when the computation needs explicit dependencies,
-isolated execution, linked traces, or a checked view.
+Use a named method for a single transform. Use `sem-compile`, `sem-run`, and
+optionally `sem-present` when the computation needs declared dependencies,
+isolated execution, linked traces, or a view you can check.
 
-### Why is invocation explicit?
+### Why do the skills run only by name?
 
-Reasoning transforms can materially reframe a request. Explicit invocation
-keeps that choice with the user and prevents overlap with repository work.
+A reasoning method can reframe a request. Running only by name keeps that
+choice with you and keeps the skills out of ordinary repository work.
 
-### Why is Cursor Marketplace distribution different?
+### Why is the Cursor Marketplace listing different?
 
 Cursor’s public Marketplace requires a recognized permissive open-source
-license. The source and direct-use adapters remain here under the recorded
-permission, but the public Cursor listing is excluded unless the licensing
-gate changes.
+license. The source and direct-use commands stay here under the recorded
+permission, but the pack is left out of the public Cursor listing unless the
+license changes.
 
 ## Start
 
-Review the named operator or Sem contract first, then install `semantic-algos`
-for authorized direct use through a supported path in the
+Read the named method or the Sem format first, then install `semantic-algos`
+for direct use through one of the paths in the
 [`Hraness Agent Skills` README](../../README.md#install-in-the-host-you-already-use).

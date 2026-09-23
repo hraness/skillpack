@@ -1,7 +1,7 @@
 {
   "name": "code-orchestrator",
   "version": "0.2.2",
-  "description": "Turn an approved direction into a plan or independently reviewed phase delivery.",
+  "description": "Plan multi-phase repository work, then carry it out phase by phase with independent review and one final integration.",
   "author": {
     "name": "Rob Cheung and Hraness"
   },

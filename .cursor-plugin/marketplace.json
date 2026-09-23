@@ -4,28 +4,28 @@
     "name": "Hraness contributors"
   },
   "metadata": {
-    "description": "Source-auditable Agent Skills for bounded engineering, reviewed phased delivery, and safe distribution administration.",
+    "description": "Agent Skills for repository work, multi-phase delivery with review, and managing installed copies of the pack.",
     "version": "0.2.2"
   },
   "plugins": [
     {
       "name": "hraness-engineering",
       "source": "plugins/hraness-engineering",
-      "description": "Turn one repository question into bounded, evidence-led work.",
+      "description": "Map, explain, test, document, measure, and refactor code in one repository, with the evidence for each result.",
       "version": "0.2.2",
       "license": "MIT"
     },
     {
       "name": "code-orchestrator",
       "source": "plugins/code-orchestrator",
-      "description": "Turn an approved direction into a plan or independently reviewed phase delivery.",
+      "description": "Plan multi-phase repository work, then carry it out phase by phase with independent review and one final integration.",
       "version": "0.2.2",
       "license": "MIT"
     },
     {
       "name": "skillpack-admin",
       "source": "plugins/skillpack-admin",
-      "description": "Audit and repair this distribution with explicit roots and backup-first writes.",
+      "description": "Audit, adopt, and repair installed copies of this skill pack, with previews by default and a backup before any repair.",
       "version": "0.2.2",
       "license": "MIT"
     }

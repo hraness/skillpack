@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "skillpack-admin",
   "version": "0.2.2",
-  "description": "Audit and repair this skills distribution with explicit roots, dry-run defaults, and backup-first writes.",
+  "description": "Audit, adopt, and repair installed copies of this skill pack, with previews by default and a backup before any repair.",
   "author": {
     "name": "Hraness contributors"
   },

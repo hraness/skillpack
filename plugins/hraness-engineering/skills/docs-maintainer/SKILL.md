@@ -19,6 +19,7 @@ Read repository documentation rules and identify the source of truth for each cl
 3. Keep procedures ordered, prerequisites explicit, examples literal, and warnings adjacent to risky steps.
 4. Use terminology and paths that readers can search in the repository. Separate conceptual explanation, task instructions, reference facts, and troubleshooting when mixing them would slow the reader.
 5. Run documented commands in a safe environment when practical. Validate snippets, links, anchors, generated references, and version statements with repository tools.
+6. Follow the repository's style guide for reader-facing prose (for example `STYLE.md`). When the guide forbids them, keep internal project terms, staged contrasts such as "X, not Y", and em dashes out of text written for readers.
 
 Do not change product code to make documentation true unless the user separately requested that product change. Record a behavior mismatch instead.
 

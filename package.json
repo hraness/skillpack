@@ -2,7 +2,7 @@
   "name": "hraness-skillpack",
   "version": "0.2.2",
   "private": true,
-  "description": "Source-auditable Agent Skills for bounded repository engineering, reviewed phased delivery, and explicit semantic reasoning.",
+  "description": "Agent Skills for repository work, multi-phase delivery with review, and named reasoning methods. Works in Codex, Cursor, Copilot, and hosts that install from skills.sh.",
   "license": "MIT",
   "type": "module",
   "packageManager": "bun@1.3.14",
