@@ -155,9 +155,9 @@ files.
 - Your repository’s instructions and required checks take precedence.
 - `code-orchestrator` plans the work and assigns each part to one owner. It
   does not schedule compute or replace CI, review, release, or merge policy.
-- `semantic-algos` skills are meant to run only when you name them; Codex and
-  Cursor enforce this. They are not for coding, testing, delivery, or
-  operations requests.
+- `semantic-algos` skills are meant to run only when you name them. Codex
+  enforces this, and so does Cursor when you install the pack as a Cursor
+  plugin. They are not for coding, testing, delivery, or operations requests.
 - `skillpack-admin` manages installed copies of this pack and nothing else.
 - A registry listing helps you find the pack; it is not a security review.
   Review the source, provenance, permission notes, and the release you install.
@@ -210,8 +210,8 @@ older repository-local copies is documented in
 ## Optional development support
 
 [Support Hraness development](https://account.hraness.com/support?product=hraness&source=skill#support)
-if these skills help your work. Membership is optional and pays for upkeep of
-the skills, their portability checks, and the distribution tools.
+if these skills help your work. Membership is optional general support for
+Hraness, which publishes and maintains these skills.
 
 The original `skillpack-admin` skill can offer this option after a useful
 human-facing result, using its bundled local cadence and opt-out helper.

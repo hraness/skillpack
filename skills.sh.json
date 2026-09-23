@@ -51,7 +51,7 @@
     },
     {
       "title": "Distribution Administration",
-      "description": "Audit, adopt, or repair installed copies of this pack. Changes are previewed first, and repair backs up files before writing.",
+      "description": "Audit, adopt, or repair installed copies of this pack. Adoption previews changes by default, and repair backs up files before writing.",
       "skills": ["skillpack-admin"]
     }
   ]

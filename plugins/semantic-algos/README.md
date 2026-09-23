@@ -4,8 +4,9 @@ Semantic Algos packages 19 Agent Skills from Rob Cheung’s work, adapted with
 permission. Sixteen are named reasoning methods, such as an assumption audit,
 inversion, or first-principles thinking. The other three compile, run, and
 present a Sem computation over text you provide, so you can inspect each
-step. Each skill is meant to run only when you ask for it by name; Codex and
-Cursor enforce that, and other hosts follow the skill’s description.
+step. Each skill is meant to run only when you ask for it by name. Codex
+enforces that, Cursor does when the pack is installed as a Cursor plugin, and
+other hosts follow the skill’s description.
 
 ## Try it
 
