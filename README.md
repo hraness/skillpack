@@ -2,19 +2,21 @@
 
 [![skills.sh](https://skills.sh/b/hraness/skillpack)](https://skills.sh/hraness/skillpack)
 
-**Pick a task. Get the method—and the boundary that keeps it honest.**
+Hraness Agent Skills is a public collection of 33 workflows for AI coding
+agents, in four packs. Eleven cover work in one repository: mapping it,
+explaining how code behaves, assessing a change, writing tests, measuring
+performance, updating docs, and refactoring without changing behavior. Two
+plan multi-phase work and carry it out with independent review of each phase.
+Nineteen come from Rob Cheung’s Semantic Algos: 16 named reasoning methods and
+three skills that compile, run, and present Sem computations. The last one
+manages installed copies of this pack. Every skill’s source is in this
+repository. Install only the packs you need, in the agent host you already use.
 
-Hraness Agent Skills is a public, source-auditable collection of 33 workflows
-for repository engineering, reviewed phased delivery, explicit semantic
-reasoning, and safe distribution administration. Install only the packs you
-need, then use them in the agent host you already work in.
+You don’t need a Hraness account, app, or service to use these skills.
 
-Hraness is the publisher, not a product dependency. These skills do not
-require or operate the Oompa application, CLI, account, or service.
+## Try it
 
-## First proof
-
-Take the shortest install path for a skills.sh-supported host:
+Install from skills.sh in any host it supports:
 
 ```sh
 npx skills add hraness/skillpack
@@ -22,49 +24,49 @@ npx skills add hraness/skillpack
 
 Then ask for a concrete result:
 
-| Request | Bounded owner | Result |
+| Request | Skill | Result |
 | --- | --- | --- |
-| “Map this repository’s user-visible features and proof paths.” | `repository-feature-map` | A navigable map from capabilities to code, runtime flows, and validation surfaces |
-| “Execute this existing multi-phase plan with implementers and reviewers.” | `phase-orchestrator` | Phase receipts, independent review, join gates, and final integration evidence |
-| “Use `$assumption-audit` on this proposal.” | `assumption-audit` | An explicit assumption register, test agenda, and fallback |
+| “Map this repository’s user-visible features and where each is tested.” | `repository-feature-map` | A map from each feature to its entry points, code, runtime flow, and the checks that cover it |
+| “Execute this existing multi-phase plan with implementers and reviewers.” | `phase-orchestrator` | Each phase implemented and reviewed independently, then one final integration with its validation results |
+| “Use `$assumption-audit` on this proposal.” | `assumption-audit` | The proposal’s assumptions, the one it depends on most, a way to test each, and a fallback |
 
-Each result names its evidence and its stopping point. The skills do not turn a
-repository request into a generic reasoning exercise or treat an install as
-permission to bypass local policy.
+Each result says what evidence it rests on and where the skill stopped. Your
+repository’s own instructions and checks still apply.
 
 ## How the pack works
 
 ```text
-request → one bounded owner → canonical SKILL.md → repository commands and gates → evidence
+request → one skill → its SKILL.md → your repository's commands and checks → result with evidence
 ```
 
-1. Agent Skills directories are the canonical product. Each `SKILL.md` says
-   when to use the workflow and when not to use it.
-2. Codex, Cursor, Agent Plugins, Copilot, and registry files are thin adapters
-   over those same sources.
-3. Routing fixtures test adjacent skills against each other so overlapping
-   requests retain one primary owner.
-4. The selected workflow uses the target repository’s instructions, commands,
-   scheduler, CI, and delivery policy. It does not replace them.
+1. Each skill is a standard Agent Skills directory. Its `SKILL.md` says when
+   to use the workflow and when not to.
+2. The Codex, Cursor, Copilot, Agent Plugins, and registry files are small
+   manifests that point at those same directories.
+3. Routing fixtures list requests that fall between two similar skills and
+   record which skill should handle each one.
+4. The skill follows the target repository’s instructions, commands,
+   scheduler, CI, and delivery policy, and does not replace them.
 
 ## Choose only what fits
 
-| Pack | Use it for | First useful result | Do not use it for |
+| Pack | Use it for | First useful result | Not for |
 | --- | --- | --- | --- |
-| [`hraness-engineering`](plugins/hraness-engineering) | Understanding, testing, verifying, documenting, measuring, or safely refactoring one repository concern | A map, explanation, risk register, verifier, test, measurement, corrected document, or behavior-preserving change | Multi-phase delivery or generic semantic transforms |
-| [`code-orchestrator`](plugins/code-orchestrator) | Writing or executing an explicitly multi-phase delivery plan | A dependency-ordered plan or reviewed phase-by-phase delivery | Host scheduling, CI policy, or ordinary one-owner coding |
-| [`semantic-algos`](plugins/semantic-algos) | Explicitly requested semantic and reasoning transforms from Rob Cheung’s work | A named transform or inspectable Sem computation | Implicit coding-task routing or repository delivery |
-| [`skillpack-admin`](plugins/skillpack-admin) | Auditing, adopting, checking drift in, or repairing this distribution | A read-only inventory or an explicit backup-first adoption plan | Product coding, Oompa operations, or compute scheduling |
+| [`hraness-engineering`](plugins/hraness-engineering) | Understanding, testing, verifying, documenting, measuring, or refactoring one part of a repository | A map, explanation, risk register, app verifier, test, measurement, corrected document, or behavior-preserving change | Multi-phase delivery or reasoning methods |
+| [`code-orchestrator`](plugins/code-orchestrator) | Writing or carrying out a plan with several phases | A dependency-ordered plan, or delivery phase by phase with review | Host scheduling, CI policy, or ordinary single-task coding |
+| [`semantic-algos`](plugins/semantic-algos) | Reasoning methods from Rob Cheung’s work, meant to run only when you name them | The output of one named method, or a Sem computation you can inspect | Ordinary coding tasks or repository delivery |
+| [`skillpack-admin`](plugins/skillpack-admin) | Auditing, adopting, checking drift in, or repairing installed copies of this pack | A read-only inventory or an adoption preview; a changed copy is overwritten only by a repair, which backs it up first | Product coding or compute scheduling |
 
-Machine resource scheduling, browser lanes, validation receipts, and worktree
-custody remain the separate responsibility of `oompa-local-efficiency`.
+A separate skill, `oompa-local-efficiency`, schedules heavy commands, browser
+sessions, and worktrees on Hraness development machines. This pack does not
+include it.
 
 ## Install in the host you already use
 
 ### Codex
 
-Install the reviewed v0.2.2 release, select only the plugins you need, and then
-start a fresh Codex task:
+Install the v0.2.2 release, add only the plugins you need, and then start a
+fresh Codex task:
 
 ```sh
 codex plugin marketplace add hraness/skillpack --ref v0.2.2
@@ -78,18 +80,17 @@ codex plugin add skillpack-admin@hraness-skillpack
 
 ### Cursor
 
-Before public Marketplace approval, individual developers can clone this
-repository and copy or symlink a selected `plugins/<name>` directory into
-`$HOME/.cursor/plugins/local`, then reload Cursor. Teams and Enterprise admins
-can instead import the repository as a team marketplace. After Cursor review,
-the three MIT-licensed plugins will be directly discoverable in Cursor’s
-public Marketplace: `hraness-engineering`, `code-orchestrator`, and optional
-`skillpack-admin`.
+The three MIT-licensed plugins (`hraness-engineering`, `code-orchestrator`,
+and the optional `skillpack-admin`) are prepared for Cursor’s public
+Marketplace but not yet approved there. Until they are, clone this repository,
+copy or symlink a `plugins/<name>` directory into
+`$HOME/.cursor/plugins/local`, and reload Cursor. Teams and Enterprise admins
+can instead import the repository as a team marketplace.
 
-`semantic-algos` is not in the Cursor marketplace manifest because its
-permission grant is not a recognized permissive open-source license. Its
-source and explicit Cursor command adapters remain available here for
-authorized direct use.
+`semantic-algos` is not in the Cursor marketplace manifest because Rob
+Cheung’s permission is not a recognized permissive open-source license. Its
+source and Cursor command adapters are available here for direct use under
+that permission.
 
 ### GitHub Copilot CLI and compatible Agent Plugin hosts
 
@@ -101,8 +102,8 @@ copilot plugin marketplace browse hraness-skillpack
 copilot plugin install hraness-engineering@hraness-skillpack
 ```
 
-The portable root `plugin.json` files are the canonical Agent Plugins
-manifests; `.github/plugin/marketplace.json` is the host adapter.
+Each pack’s `plugin.json` is its Agent Plugins manifest, and
+`.github/plugin/marketplace.json` lists the packs for Copilot.
 
 ### Agent Skills-compatible hosts
 
@@ -110,20 +111,20 @@ Each `plugins/<plugin>/skills/<skill>/` directory is independently portable.
 The root `skills.sh.json` groups the public inventory without changing skill
 behavior.
 
-## Evidence you can inspect
+## Check the source
 
-- 33 canonical `SKILL.md` sources across four packs.
-- A discoverable inventory in [`catalog/catalog.json`](catalog/catalog.json).
-- Pairwise ownership checks in
+- 33 `SKILL.md` files across four packs.
+- An inventory of every skill in [`catalog/catalog.json`](catalog/catalog.json).
+- Routing cases for overlapping skills in
   [`catalog/routing-fixtures.json`](catalog/routing-fixtures.json).
-- Exact upstream revisions and local path inventories in
+- The upstream revision and file list for each adapted skill in
   [`sources.lock.json`](sources.lock.json) and
   [`catalog/provenance.json`](catalog/provenance.json).
-- Host manifest, registry, portability, provenance, and offline administration
-  canaries in the repository check.
+- Checks for host manifests, registry files, portability, provenance, and the
+  offline admin tools, all run by the repository check.
 
-Install the pinned Bun version declared in `package.json`, then prove the
-checkout from source:
+Install the Bun version pinned in `package.json`, then run the checks from a
+clone:
 
 ```sh
 bun install --frozen-lockfile
@@ -149,19 +150,19 @@ Add `--apply` only after reviewing the plan. Repair requires both `--repair`
 and `--apply`, creates a sibling backup, and never deletes extra destination
 files.
 
-## Boundaries
+## Limits
 
-- Repository instructions and required gates remain authoritative.
-- `code-orchestrator` coordinates reasoning and ownership; it is not a compute
-  scheduler and does not replace CI, review, release, or merge policy.
-- `semantic-algos` is explicit-only. It does not silently take over coding,
-  testing, delivery, or operations requests.
-- `skillpack-admin` manages this distribution only. It does not install or
-  configure Oompa.
-- Registry presence is discovery evidence, not a security endorsement. Review
-  source, provenance, permission notes, and the selected release.
-- Rob Cheung’s semantic material is included with attribution and permission;
-  it is not represented as MIT-licensed.
+- Your repository’s instructions and required checks take precedence.
+- `code-orchestrator` plans the work and assigns each part to one owner. It
+  does not schedule compute or replace CI, review, release, or merge policy.
+- `semantic-algos` skills are meant to run only when you name them. Codex
+  enforces this, and so does Cursor when you install the pack as a Cursor
+  plugin. They are not for coding, testing, delivery, or operations requests.
+- `skillpack-admin` manages installed copies of this pack and nothing else.
+- A registry listing helps you find the pack; it is not a security review.
+  Review the source, provenance, permission notes, and the release you install.
+- Rob Cheung’s semantic material is included with attribution and permission
+  and is not represented as MIT-licensed.
 
 The compact engineering set adapts selected ideas from
 [PStack](https://github.com/cursor/plugins/tree/main/pstack). The other adapted
@@ -174,10 +175,9 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
 
 ## Questions
 
-### Do I need Oompa?
+### Do I need a Hraness account or app?
 
-No. Hraness publishes this repository, but the skills do not require the Oompa
-application, CLI, account, or service.
+No. Hraness publishes the skills, and they run in your agent host.
 
 ### Which pack should I start with?
 
@@ -188,19 +188,20 @@ Start with `hraness-engineering` for ordinary repository work. Add
 
 ### Will a skill override my repository’s instructions?
 
-No. Repository instructions, validation commands, scheduling, CI, and delivery
-policy remain controlling.
+No. Your repository’s instructions, validation commands, scheduling, CI, and
+delivery policy still apply.
 
 ### Why are some directory listings deferred?
 
-Public directories impose their own review and licensing requirements.
-Repository source may remain available while a specific listing is deferred;
-[`docs/distribution.md`](docs/distribution.md) records each channel and gate.
+Public directories set their own review and licensing requirements. The
+source stays available here while a listing waits, and
+[`docs/distribution.md`](docs/distribution.md) records each channel and what it
+requires.
 
-## Start with source
+## Get started
 
-Review the pack that owns your task, install it from the v0.2.2 release, and
-run one concrete request. Existing v0.1 installations should follow
+Read the skill for your task, install its pack from the v0.2.2 release, and
+try one concrete request. Existing v0.1 installations should follow
 [`docs/migration-v0.2.md`](docs/migration-v0.2.md). Distribution status lives
 in [`docs/distribution.md`](docs/distribution.md), and staged retirement of
 older repository-local copies is documented in
@@ -209,11 +210,10 @@ older repository-local copies is documented in
 ## Optional development support
 
 [Support Hraness development](https://account.hraness.com/support?product=hraness&source=skill#support)
-if these methods help your work. Membership is optional and keeps the skill
-collection, portability checks and distribution tooling maintained.
+if these skills help your work. Membership is optional general support for
+Hraness, which publishes and maintains these skills.
 
 The original `skillpack-admin` skill can offer this option after a useful
 human-facing result, using its bundled local cadence and opt-out helper.
-Adapted engineering, orchestration and semantic skill instructions retain
-their existing behavior; they do not inherit an automatic invitation from
-this repository README. No account or payment is needed to use any skill.
+The engineering, orchestration, and semantic skills do not include this
+invitation. No account or payment is needed to use any skill.

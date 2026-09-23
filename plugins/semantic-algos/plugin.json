@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "semantic-algos",
   "version": "0.2.2",
-  "description": "Run explicit semantic transforms or inspectable Sem computations from Rob Cheung's work, adapted with permission.",
+  "description": "Run a named reasoning method or a Sem computation you can inspect, from Rob Cheung's work, adapted with permission.",
   "author": {
     "name": "Rob Cheung and Hraness"
   },

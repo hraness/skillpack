@@ -1,7 +1,7 @@
 {
   "name": "semantic-algos",
   "version": "0.2.2",
-  "description": "Run explicit semantic transforms or inspectable Sem computations from Rob Cheung's work, adapted with permission.",
+  "description": "Run a named reasoning method or a Sem computation you can inspect, from Rob Cheung's work, adapted with permission.",
   "author": {
     "name": "Rob Cheung and Hraness",
     "url": "https://github.com/kousun12/semantic-algos"
@@ -18,8 +18,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Semantic Algorithms by Rob Cheung",
-    "shortDescription": "Run named, inspectable semantic computations.",
-    "longDescription": "Invoke Rob Cheung's reasoning operators by name, or compile, run, and present an inspectable Sem computation. Every workflow stays explicit and separate from ordinary coding and repository delivery.",
+    "shortDescription": "Run named reasoning methods and Sem computations.",
+    "longDescription": "19 skills from Rob Cheung's work: invoke one of 16 reasoning methods by name, or compile, run, and present a Sem computation you can inspect step by step. In Codex each skill runs only when you name it, separate from ordinary coding and repository delivery.",
     "developerName": "Rob Cheung and Hraness",
     "category": "Productivity",
     "capabilities": [

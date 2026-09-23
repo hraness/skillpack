@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "hraness-engineering",
   "version": "0.2.2",
-  "description": "Source-auditable workflows that turn repository questions into bounded maps, explanations, proof, tests, measurements, docs, or safe refactors.",
+  "description": "Map, explain, test, document, measure, and refactor code in one repository, with the evidence for each result.",
   "author": {
     "name": "Hraness"
   },

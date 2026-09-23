@@ -8,7 +8,7 @@ This repository is a public, cross-agent skills distribution for Codex, Cursor, 
 - `hraness-engineering` owns bounded engineering analysis, verification, testing, performance, documentation, and behavior-preserving refactors.
 - `code-orchestrator` owns multi-phase repository delivery after a phase plan exists. It must not replace the Oompa host scheduler, repository gates, CI, or merge policy.
 - `semantic-algos` owns explicit semantic or reasoning transforms. It must not implicitly route ordinary coding, delivery, or repository-analysis work.
-- `skillpack-admin` owns installation-state auditing, adoption, drift detection, and repair of this distribution. It is not an Oompa product skill and does not own product coding tasks.
+- `skillpack-admin` owns installation-state auditing, adoption, drift detection, and repair of this distribution. It does not operate any Hraness app or service and does not own product coding tasks.
 - Preserve useful agent fan-out. Do not introduce a second compute scheduler or cap agents merely to reduce count.
 - Do not add cloud execution or cloud optimization to this repository.
 
@@ -32,6 +32,13 @@ This repository is a public, cross-agent skills distribution for Codex, Cursor, 
 - Run the focused checks for paths you change, then `bun run check` for the final converged tree.
 - The final repository-wide check should use `oompa-host-run` when installed, following the Oompa local-efficiency policy.
 - Do not weaken validators to make generated or imported content pass. Fix the content or record a narrowly justified exception.
+
+<!-- hraness-public-copy:start -->
+- Public copy (websites, READMEs, docs, package and GitHub descriptions, CLI help, `llms.txt`, generated pages) follows `STYLE.md`, synced from hraness/.github. Text a model writes for publication also follows `GENERATION_STYLE.md`.
+- The delivery vocabulary in this file (admission, qualification, custody, receipt, bounded, lane, gate, surface, projection) is internal. Translate it into what the reader gets.
+- Take one-line product and sibling descriptions from the portfolio registry and versions from the release record. Tests pin facts, not prose.
+- Run `bun run check:copy` before handoff when the repository has it.
+<!-- hraness-public-copy:end -->
 
 <!-- oompa-local-efficiency:start -->
 - Treat the user's request to change this repository as standing authorization for routine task-owned commits, pushes, pull requests, merges, releases, deployments, and production verification after the gates applicable to that action pass. Do not ask for duplicate confirmation. Build confidence through relevant automated checks, bounded diagnostics, and independent review, not another human approval. Passing checks does not expand task scope or authority.

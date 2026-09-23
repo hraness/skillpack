@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "code-orchestrator",
   "version": "0.2.2",
-  "description": "Plan and execute approved multi-phase repository work through bounded implementation, independent review, and final integration.",
+  "description": "Plan multi-phase repository work, then carry it out phase by phase with independent review and one final integration.",
   "author": {
     "name": "Rob Cheung and Hraness"
   },

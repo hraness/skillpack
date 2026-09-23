@@ -14,8 +14,8 @@
       "bundle": "plugins/hraness-engineering",
       "logo": "plugins/hraness-engineering/assets/logo.png",
       "publicName": "Repository Engineering by Hraness",
-      "shortDescription": "Turn one repository question into bounded, evidence-led work.",
-      "longDescription": "Choose one source-auditable workflow for a repository map, current-behavior explanation, rationale, change-impact register, approach decision, app verifier, regression test, performance measurement, corrected document, or behavior-preserving refactor. Each workflow states its evidence and stop condition.",
+      "shortDescription": "Map, explain, test, and refactor code in one repository.",
+      "longDescription": "Eleven skills for work in one repository: a map of its features, an explanation of current behavior, the history behind a design, a change-impact register, a comparison of approaches, an app verifier, regression tests, a performance measurement, corrected docs, or a refactor that keeps behavior the same. Each result says what evidence it rests on and where the skill stopped.",
       "category": "Productivity",
       "releaseNotes": "Refresh the public story around bounded results, first proof, evidence, and explicit stop conditions across 11 repository-engineering skills.",
       "starterPrompts": [
@@ -43,8 +43,8 @@
       "bundle": "plugins/code-orchestrator",
       "logo": "plugins/code-orchestrator/assets/logo.png",
       "publicName": "Phased Delivery",
-      "shortDescription": "Turn an approved direction into a plan or reviewed phase delivery.",
-      "longDescription": "Write a dependency-ordered implementation plan, or execute an existing plan through bounded implementers, independent reviewers, join gates, validation, and final integration while preserving repository and host policy.",
+      "shortDescription": "Plan multi-phase work, then deliver it with independent review.",
+      "longDescription": "Write a dependency-ordered implementation plan, or carry out an existing plan with separate implementers, independent reviewers, validation, and one final integration. Both skills follow the repository's own rules and host policy.",
       "category": "Productivity",
       "releaseNotes": "Refresh the public story around approved direction, first proof, independent review, join gates, and final integration.",
       "starterPrompts": [
@@ -74,8 +74,8 @@
       "bundle": "plugins/semantic-algos",
       "logo": "plugins/semantic-algos/assets/logo.png",
       "publicName": "Semantic Algorithms by Rob Cheung",
-      "shortDescription": "Run named semantic transforms or inspectable Sem computations.",
-      "longDescription": "Explicitly invoke a reasoning operator such as assumption audit, inversion, first principles, counterfactuals, abstraction ladders, decision matrices, or question forging—or compile and run an inspectable Sem computation. Attribution and permission terms remain attached.",
+      "shortDescription": "Run named reasoning methods or Sem computations you can inspect.",
+      "longDescription": "Invoke a reasoning method by name, such as assumption audit, inversion, first principles, counterfactuals, abstraction ladders, decision matrices, or question forging. Or compile and run a Sem computation you can inspect step by step. Rob Cheung's attribution and permission terms stay attached.",
       "category": "Productivity",
       "releaseNotes": "Refresh the public story around named transforms, inspectable Sem computation, explicit invocation, and permission boundaries.",
       "starterPrompts": [

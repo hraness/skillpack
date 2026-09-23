@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 import { runSupportCommand } from "@hraness/support-foundation/node";
 
-const profile = { id: "hraness", name: "Hraness", valueProposition: "Support maintained agent methods and portable skills.", updates: false };
+const profile = { id: "hraness", name: "Hraness", valueProposition: "Support continued work on these skills and their install tools.", updates: false };
 export async function main(args = process.argv.slice(2)) {
   const result = await runSupportCommand(profile, args[0] === "support" ? args.slice(1) : args, { command: [process.execPath, fileURLToPath(import.meta.url)], gitEmail: false });
   if (result.stdout) process.stdout.write(result.stdout);

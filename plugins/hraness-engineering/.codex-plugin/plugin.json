@@ -1,7 +1,7 @@
 {
   "name": "hraness-engineering",
   "version": "0.2.2",
-  "description": "Source-auditable workflows that turn repository questions into bounded, evidence-led engineering work.",
+  "description": "Map, explain, test, document, measure, and refactor code in one repository, with the evidence for each result.",
   "author": {
     "name": "Hraness",
     "url": "https://github.com/hraness"
@@ -19,19 +19,19 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Repository Engineering by Hraness",
-    "shortDescription": "Turn repository questions into evidenced work.",
-    "longDescription": "Choose one bounded workflow for a repository map, current-behavior explanation, rationale, change impact, approach decision, app verification, test, measurement, document, or behavior-preserving refactor.",
+    "shortDescription": "Map, explain, test, and refactor one repository.",
+    "longDescription": "Eleven skills for work in one repository: map its features, explain current behavior, reconstruct why code looks the way it does, assess a change's impact, compare approaches, build or maintain an app verifier, write tests, investigate performance, update docs, or refactor without changing behavior.",
     "developerName": "Hraness",
     "category": "Productivity",
     "capabilities": [
-      "Evidence-led repository analysis",
+      "Repository analysis",
       "App verification",
       "Test engineering",
       "Performance investigation",
       "Documentation and safe refactoring"
     ],
     "defaultPrompt": [
-      "Map this repository's user-visible features and proof paths.",
+      "Map this repository's user-visible features and where each is tested.",
       "Create a safe verifier for this application.",
       "Assess the blast radius of this proposed change."
     ],

@@ -13,8 +13,8 @@ validation.
 | `semantic-algos` | Semantic Algorithms by Rob Cheung | Explicit semantic transforms |
 | `skillpack-admin` | Hraness Skillpack Admin | Optional distribution operators |
 
-Hraness is the publisher. None of these IDs denotes or grants access to the Oompa
-product. `skillpack-admin` is intentionally not promoted as a general-purpose
+Hraness is the publisher. None of these IDs denotes or grants access to a Hraness
+app or service. `skillpack-admin` is intentionally not promoted as a general-purpose
 capability plugin in universal directories.
 
 ## Channels

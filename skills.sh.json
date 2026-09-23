@@ -4,7 +4,7 @@
   "groupings": [
     {
       "title": "Repository Engineering",
-      "description": "Turn one repository question into a bounded map, explanation, proof, document, measurement, test, or safe refactor.",
+      "description": "Answer one question about a repository with a map, an explanation, an app verifier, a test, a measurement, updated docs, or a safe refactor.",
       "skills": [
         "repository-feature-map",
         "semantic-code-analysis",
@@ -21,12 +21,12 @@
     },
     {
       "title": "Phased Delivery",
-      "description": "Turn an approved direction into a dependency-ordered plan or independently reviewed phase delivery.",
+      "description": "Turn a chosen direction into a dependency-ordered plan, or deliver an existing plan phase by phase with independent review.",
       "skills": ["write-phase-plan", "phase-orchestrator"]
     },
     {
       "title": "Semantic Algorithms",
-      "description": "Run a named semantic transform or an inspectable Sem computation—only when explicitly invoked.",
+      "description": "Run a named reasoning method or a Sem computation you can inspect. These skills are meant to run only when you invoke them by name.",
       "skills": [
         "analogy-transfer",
         "assumption-audit",
@@ -51,7 +51,7 @@
     },
     {
       "title": "Distribution Administration",
-      "description": "Audit or adopt this distribution with explicit roots, dry-run defaults, and backup-first repair.",
+      "description": "Audit, adopt, or repair installed copies of this pack. Adoption previews changes by default, and repair backs up files before writing.",
       "skills": ["skillpack-admin"]
     }
   ]

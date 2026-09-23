@@ -4,35 +4,35 @@
     "name": "Hraness"
   },
   "metadata": {
-    "description": "Source-auditable Agent Skills for bounded engineering, reviewed phased delivery, explicit semantic reasoning, and safe distribution administration.",
+    "description": "Agent Skills for repository work, multi-phase delivery with review, named reasoning methods, and managing installed copies of the pack.",
     "version": "0.2.2"
   },
   "plugins": [
     {
       "name": "hraness-engineering",
       "source": "plugins/hraness-engineering",
-      "description": "Turn one repository question into bounded, evidence-led work.",
+      "description": "Map, explain, test, document, measure, and refactor code in one repository, with the evidence for each result.",
       "version": "0.2.2",
       "license": "MIT"
     },
     {
       "name": "code-orchestrator",
       "source": "plugins/code-orchestrator",
-      "description": "Turn an approved direction into a plan or independently reviewed phase delivery.",
+      "description": "Plan multi-phase repository work, then carry it out phase by phase with independent review and one final integration.",
       "version": "0.2.2",
       "license": "MIT"
     },
     {
       "name": "semantic-algos",
       "source": "plugins/semantic-algos",
-      "description": "Run explicit semantic transforms or inspectable Sem computations from Rob Cheung’s work.",
+      "description": "Run a named reasoning method or a Sem computation you can inspect, from Rob Cheung’s work, adapted with permission.",
       "version": "0.2.2",
       "license": "LicenseRef-Permission-Rob-Cheung"
     },
     {
       "name": "skillpack-admin",
       "source": "plugins/skillpack-admin",
-      "description": "Audit and repair this distribution with explicit roots and backup-first writes.",
+      "description": "Audit, adopt, and repair installed copies of this skill pack, with previews by default and a backup before any repair.",
       "version": "0.2.2",
       "license": "MIT"
     }
