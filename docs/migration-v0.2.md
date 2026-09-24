@@ -1,7 +1,7 @@
 # Migrate from v0.1 to v0.2
 
 Version 0.2 clarifies that this repository is a general Agent Skills
-distribution published by Hraness. It is not an HRA product integration.
+distribution published by Hraness. It is not a product integration.
 
 ## Identity change
 
