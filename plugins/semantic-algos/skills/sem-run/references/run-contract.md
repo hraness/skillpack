@@ -40,7 +40,7 @@ branches must be independent. Mapped or iterative constructs expand into named
 applications with explicit bounds. A semantic selector or stopping test is its
 own application.
 
-The semantic runner does not acquire or replace HRA compute scheduling. If a
+The semantic runner does not acquire or replace host compute scheduling. If a
 host policy governs subagent use, follow it; semantic application isolation is
 not authority to bypass host limits or repository rules.
 
