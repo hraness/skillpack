@@ -53,7 +53,7 @@ bun plugins/skillpack-admin/scripts/machine-audit.mjs \
   and portable references.
 - Target repository: commands, gates, delivery policy, app-specific verifier,
   and repository-only domain knowledge.
-- Oompa local efficiency: machine resource scheduling, capability lanes,
+- HRA local efficiency: machine resource scheduling, capability lanes,
   validation receipts, worktree custody, and throughput telemetry.
 - Host marketplace: installation state and version selection.
 
