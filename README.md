@@ -57,7 +57,7 @@ request → one skill → its SKILL.md → your repository's commands and checks
 | [`semantic-algos`](plugins/semantic-algos) | Reasoning methods from Rob Cheung’s work, meant to run only when you name them | The output of one named method, or a Sem computation you can inspect | Ordinary coding tasks or repository delivery |
 | [`skillpack-admin`](plugins/skillpack-admin) | Auditing, adopting, checking drift in, or repairing installed copies of this pack | A read-only inventory or an adoption preview; a changed copy is overwritten only by a repair, which backs it up first | Product coding or compute scheduling |
 
-A separate skill, `oompa-local-efficiency`, schedules heavy commands, browser
+A separate skill, `hra-local-efficiency`, schedules heavy commands, browser
 sessions, and worktrees on Hraness development machines. This pack does not
 include it.
 
