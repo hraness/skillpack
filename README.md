@@ -61,6 +61,28 @@ A separate skill, `local-efficiency`, schedules heavy commands, browser
 sessions, and worktrees on Hraness development machines. This pack does not
 include it.
 
+## How it compares
+
+As of September 2026:
+
+- [anthropics/skills](https://github.com/anthropics/skills) is Anthropic's
+  public skill repository. It includes skills for Word, PDF, PowerPoint, and
+  Excel files, which this pack does not have.
+- [obra/superpowers](https://github.com/obra/superpowers) is a widely used
+  development-workflow library with planning, test-driven development,
+  debugging, code review, and subagent skills. Its planning and subagent
+  skills overlap `code-orchestrator`, and it has debugging and code-review
+  skills that this pack lacks. This pack adds repository mapping,
+  change-impact assessment, performance measurement, and named reasoning
+  methods.
+- [openai/skills](https://github.com/openai/skills) is OpenAI's skill catalog
+  for Codex. [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills)
+  is Vercel's collection for React, web design, and deploying to Vercel.
+
+Choose this pack for repository-scoped engineering skills, recorded
+provenance for every adapted skill in [`sources.lock.json`](sources.lock.json),
+and `skillpack-admin`, which audits and repairs installed copies.
+
 ## Install in the host you already use
 
 ### Codex
@@ -211,7 +233,7 @@ older repository-local copies is documented in
 
 [Support Hraness development](https://account.hraness.com/support?product=hraness&source=skill#support)
 if these skills help your work. Membership is optional general support for
-Hraness, which publishes and maintains these skills.
+[Hraness](https://hraness.com), which publishes and maintains these skills.
 
 The original `skillpack-admin` skill can offer this option after a useful
 human-facing result, using its bundled local cadence and opt-out helper.
