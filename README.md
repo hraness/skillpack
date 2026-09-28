@@ -70,9 +70,11 @@ As of September 2026:
   Excel files, which this pack does not have.
 - [obra/superpowers](https://github.com/obra/superpowers) is a widely used
   development-workflow library with planning, test-driven development,
-  debugging, code review, and subagent skills. It overlaps
-  `code-orchestrator`. This pack adds repository mapping, change-impact
-  assessment, performance measurement, and named reasoning methods.
+  debugging, code review, and subagent skills. Its planning and subagent
+  skills overlap `code-orchestrator`, and it has debugging and code-review
+  skills that this pack lacks. This pack adds repository mapping,
+  change-impact assessment, performance measurement, and named reasoning
+  methods.
 - [openai/skills](https://github.com/openai/skills) is OpenAI's skill catalog
   for Codex. [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills)
   is Vercel's collection for React, web design, and deploying to Vercel.
