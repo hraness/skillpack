@@ -1,3 +1,5 @@
+# Only github-actions is covered. The bun devDependency @hraness/support-foundation
+# is pinned to a github: commit SHA, which Dependabot cannot bump; update it by hand.
 version: 2
 updates:
   - package-ecosystem: github-actions
