@@ -1,0 +1,22 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "local-efficiency",
+  "version": "0.5.0",
+  "description": "Managed Codex and Claude autonomy, local scheduling, CI isolation, and guarded maintenance for Hraness repository work.",
+  "author": {
+    "name": "Hraness",
+    "url": "https://github.com/hraness"
+  },
+  "homepage": "https://github.com/hraness/skillpack/tree/main/plugins/local-efficiency",
+  "repository": "https://github.com/hraness/skillpack",
+  "license": "MIT",
+  "keywords": [
+    "agent-skills",
+    "codex",
+    "claude-code",
+    "local-development",
+    "scheduling",
+    "worktrees"
+  ],
+  "skills": "./skills/"
+}

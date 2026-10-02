@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  hra-disk-guard hourly job (template; NOT installed or loaded).
+
+  Runs `hra-disk-guard scheduled`: a warn-only free-space check, the
+  report-only janitor (Chrome code_sign_clone copies >12 h not held, bun
+  $TMPDIR staging dirs >60 min), and the daily top-10 size report. It deletes
+  nothing. Output: ~/.local/state/local-efficiency/disk-v1/janitor.log.
+
+  To enable (Ben): replace __BUN__ (absolute bun path, e.g. /Users/you/.bun/bin/bun),
+  __SCRIPT__ (absolute path to scripts/hra-disk-guard.ts) and __HOME__, save as
+  ~/Library/LaunchAgents/com.hraness.disk-guard.plist, then
+  `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hraness.disk-guard.plist`.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.hraness.disk-guard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__BUN__</string>
+    <string>__SCRIPT__</string>
+    <string>scheduled</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>3600</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>__HOME__/.local/state/local-efficiency/disk-v1/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.local/state/local-efficiency/disk-v1/launchd.err.log</string>
+</dict>
+</plist>

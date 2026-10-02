@@ -25,7 +25,7 @@
     {
       "name": "semantic-algos",
       "source": "plugins/semantic-algos",
-      "description": "Run a named reasoning method or a Sem computation you can inspect, from Rob Cheung’s work, adapted with permission.",
+      "description": "Run a named reasoning method or a Sem computation you can inspect, from Rob Cheung\u2019s work, adapted with permission.",
       "version": "0.2.2",
       "license": "LicenseRef-Permission-Rob-Cheung"
     },
@@ -34,6 +34,13 @@
       "source": "plugins/skillpack-admin",
       "description": "Audit, adopt, and repair installed copies of this skill pack, with previews by default and a backup before any repair.",
       "version": "0.2.2",
+      "license": "MIT"
+    },
+    {
+      "name": "local-efficiency",
+      "source": "plugins/local-efficiency",
+      "description": "Managed Codex and Claude autonomy, local scheduling, CI isolation, and guarded maintenance for Hraness repository work.",
+      "version": "0.5.0",
       "license": "MIT"
     }
   ]

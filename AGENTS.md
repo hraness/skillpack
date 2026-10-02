@@ -15,6 +15,7 @@ This repository is a public, cross-agent skills distribution for Codex, Cursor, 
 - `code-orchestrator` owns multi-phase repository delivery after a phase plan exists. It must not replace the host scheduler, repository gates, CI, or merge policy.
 - `semantic-algos` owns explicit semantic or reasoning transforms. It must not implicitly route ordinary coding, delivery, or repository-analysis work.
 - `skillpack-admin` owns installation-state auditing, adoption, drift detection, and repair of this distribution. It does not operate any Hraness app or service and does not own product coding tasks.
+- `local-efficiency` owns the managed agent baseline on Hraness development machines: host scheduling, approval-guidance bootstrap, telemetry, and local maintenance commands. It does not add repository analysis, product coding, or cloud execution.
 - Preserve useful agent fan-out. Do not introduce a second compute scheduler or cap agents merely to reduce count.
 - Do not add cloud execution or cloud optimization to this repository.
 
