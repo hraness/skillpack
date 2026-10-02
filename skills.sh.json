@@ -22,7 +22,10 @@
     {
       "title": "Phased Delivery",
       "description": "Turn a chosen direction into a dependency-ordered plan, or deliver an existing plan phase by phase with independent review.",
-      "skills": ["write-phase-plan", "phase-orchestrator"]
+      "skills": [
+        "write-phase-plan",
+        "phase-orchestrator"
+      ]
     },
     {
       "title": "Semantic Algorithms",
@@ -52,7 +55,16 @@
     {
       "title": "Distribution Administration",
       "description": "Audit, adopt, or repair installed copies of this pack. Adoption previews changes by default, and repair backs up files before writing.",
-      "skills": ["skillpack-admin"]
+      "skills": [
+        "skillpack-admin"
+      ]
+    },
+    {
+      "title": "Local Machine Automation",
+      "description": "Coordinate local agent scheduling, bootstrap, browser recovery, and maintenance commands on Hraness development machines.",
+      "skills": [
+        "local-efficiency"
+      ]
     }
   ]
 }

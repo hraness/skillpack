@@ -1,0 +1,19 @@
+#!/bin/sh
+# Keep PID, process group, and inherited Playwright pipes in this shell.
+# Bun only resolves and quotes argv in a child; it never takes over the browser.
+chrome_launch="$(bun -e '
+  import { realpathSync } from "node:fs";
+  import { dirname, join } from "node:path";
+  import { pathToFileURL } from "node:url";
+  try {
+    const launcher = realpathSync(process.argv[1]);
+    const { chromeExecCommand } = await import(pathToFileURL(join(dirname(launcher), "chrome-launcher.ts")).href);
+    process.stdout.write(chromeExecCommand(launcher, process.argv.slice(2)));
+  } catch (error) {
+    console.error(`hra-chrome: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(127);
+  }
+' "$0" "$@")" || exit "$?"
+: "${chrome_launch:?browser launch command missing}"
+# Every argument is single-quoted by chromeExecCommand; never evaluate raw argv.
+eval "$chrome_launch"

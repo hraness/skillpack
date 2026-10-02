@@ -1,0 +1,50 @@
+{
+  "name": "local-efficiency",
+  "version": "0.5.0",
+  "description": "Managed Codex and Claude autonomy, local scheduling, CI isolation, and guarded maintenance for Hraness repository work.",
+  "author": {
+    "name": "Hraness",
+    "url": "https://github.com/hraness"
+  },
+  "homepage": "https://github.com/hraness/skillpack/tree/main/plugins/local-efficiency",
+  "repository": "https://github.com/hraness/skillpack",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "claude-code",
+    "local-development",
+    "permissions",
+    "scheduling",
+    "validation",
+    "worktrees"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Local Efficiency",
+    "shortDescription": "Coordinate autonomous, safe local agent work.",
+    "longDescription": "Keeps Codex and Claude approval defaults and repository guidance aligned while preserving useful agent fan-out, coordinating capability lanes, measuring local throughput, isolating complete-history CI, and reclaiming verified clean worktrees.",
+    "developerName": "Hraness",
+    "category": "Productivity",
+    "capabilities": [
+      "Local scheduling",
+      "Codex and Claude approval baseline",
+      "Repository guidance adoption",
+      "Validation receipts",
+      "Throughput telemetry",
+      "CI ref isolation",
+      "Workspace maintenance",
+      "Signed-in browser recovery"
+    ],
+    "defaultPrompt": [
+      "Install the local efficiency baseline on this Mac.",
+      "Check Codex, Claude, and repository approval-policy drift.",
+      "Audit local Codex resource and worktree health.",
+      "Measure and improve this machine's Codex throughput."
+    ],
+    "websiteURL": "https://github.com/hraness/skillpack/tree/main/plugins/local-efficiency",
+    "privacyPolicyURL": "https://github.com/hraness/skillpack/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/hraness/skillpack/blob/main/TERMS.md",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png"
+  }
+}

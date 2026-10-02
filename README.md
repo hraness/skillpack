@@ -56,10 +56,7 @@ request → one skill → its SKILL.md → your repository's commands and checks
 | [`code-orchestrator`](plugins/code-orchestrator) | Writing or carrying out a plan with several phases | A dependency-ordered plan, or delivery phase by phase with review | Host scheduling, CI policy, or ordinary single-task coding |
 | [`semantic-algos`](plugins/semantic-algos) | Reasoning methods from Rob Cheung’s work, meant to run only when you name them | The output of one named method, or a Sem computation you can inspect | Ordinary coding tasks or repository delivery |
 | [`skillpack-admin`](plugins/skillpack-admin) | Auditing, adopting, checking drift in, or repairing installed copies of this pack | A read-only inventory or an adoption preview; a changed copy is overwritten only by a repair, which backs it up first | Product coding or compute scheduling |
-
-A separate skill, `local-efficiency`, schedules heavy commands, browser
-sessions, and worktrees on Hraness development machines. This pack does not
-include it.
+| [`local-efficiency`](plugins/local-efficiency) | Scheduling heavy commands, browser sessions, and machine maintenance on Hraness development machines | A managed local baseline: scheduled lanes, aligned agent guidance, and reclaimable resources | Repository analysis, product coding, or hosts without Hraness conventions |
 
 ## How it compares
 
