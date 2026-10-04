@@ -2,15 +2,17 @@
 
 [![skills.sh](https://skills.sh/b/hraness/skillpack)](https://skills.sh/hraness/skillpack)
 
-Hraness Agent Skills is a public collection of 33 workflows for AI coding
-agents, in four packs. Eleven cover work in one repository: mapping it,
+Hraness Agent Skills is a public collection of 34 workflows for AI coding
+agents, in five packs. The four portable packs contain 33 workflows;
+`local-efficiency` adds one for Hraness development machines.
+Eleven cover work in one repository: mapping it,
 explaining how code behaves, assessing a change, writing tests, measuring
 performance, updating docs, and refactoring without changing behavior. Two
 plan multi-phase work and carry it out with independent review of each phase.
 Nineteen come from Rob Cheung’s Semantic Algos: 16 named reasoning methods and
-three skills that compile, run, and present Sem computations. The last one
-manages installed copies of this pack. Every skill’s source is in this
-repository. Install only the packs you need, in the agent host you already use.
+three skills that compile, run, and present Sem computations. One manages
+installed copies of this pack. One manages local scheduling and maintenance
+on Hraness development machines. Every skill’s source is in this repository. Install only the packs you need, in the agent host you already use.
 
 You don’t need a Hraness account, app, or service to use these skills.
 
@@ -22,7 +24,13 @@ Install from skills.sh in any host it supports:
 npx skills add hraness/skillpack
 ```
 
-Then ask for a concrete result:
+For a first run, open a repository in your agent host and ask: “Use
+`repository-feature-map` to map this repository's user-visible features and
+where each is tested. Return the map in your response; do not write files.”
+You get entry points, implementing modules, tests, and unresolved gaps to check
+against source. The skill writes a maintained map only when you ask for one.
+
+Choose another request when you need a different result:
 
 | Request | Skill | Result |
 | --- | --- | --- |
