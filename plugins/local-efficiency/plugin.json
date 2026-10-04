@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "local-efficiency",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Managed Codex and Claude autonomy, local scheduling, CI isolation, and guarded maintenance for Hraness repository work.",
   "author": {
     "name": "Hraness",

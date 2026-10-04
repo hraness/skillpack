@@ -40,6 +40,8 @@ import {
   resolveAtetRuntimeRoot,
   resolveCapabilityStateRoot,
   resolveHostResourceStateRoot,
+  runHostCommand,
+  type HostRunOptions,
 } from "./host-run";
 
 describe("host-wide resource wrapper", () => {
@@ -49,6 +51,63 @@ describe("host-wide resource wrapper", () => {
     expect(permitsForMode("heavy", 18)).toBe(2);
     expect(permitsForMode("exclusive", 18)).toBe(4);
     expect(permitsForMode("exclusive", 2)).toBe(1);
+  });
+
+  test("full CPU is an explicit exclusive mac-native opt-in at every capacity", () => {
+    for (const [parallelism, capacity] of [[2, 1], [3, 2], [6, 3], [12, 4]]) {
+      expect(permitsForMode("exclusive", parallelism, "mac-native")).toBe(Math.min(2, capacity));
+      expect(permitsForMode("exclusive", parallelism, "mac-native", true)).toBe(capacity);
+      expect(permitsForMode("exclusive", parallelism, "mac-native", false)).toBe(Math.min(2, capacity));
+    }
+    expect(parseHostRunArguments(["--full-cpu", "--mode=exclusive", "--lane=mac-native", "--", "true"]))
+      .toMatchObject({ fullCpu: true, mode: "exclusive", lane: "mac-native" });
+    for (const mode of ["shared", "heavy", "exclusive"]) {
+      for (const lane of ["compute", "browser", "browser-auth", "mac-native"]) {
+        if (mode === "exclusive" && lane === "mac-native") continue;
+        expect(() => parseHostRunArguments(["--full-cpu", `--mode=${mode}`, `--lane=${lane}`, "--", "true"]))
+          .toThrow("--full-cpu requires --mode=exclusive --lane=mac-native");
+      }
+    }
+    for (const flags of [["--full-cpu", "--full-cpu"], ["--full-cpu=true"], ["--full-cpu=false"], ["--full-cpu="], ["--full-cpu", "true"], ["--full-cpu", "false"]]) {
+      expect(() => parseHostRunArguments(["--mode=exclusive", "--lane=mac-native", ...flags, "--", "true"])).toThrow();
+    }
+    for (const flags of [[], ["--mode=exclusive"], ["--lane=mac-native"]]) {
+      expect(() => parseHostRunArguments(["--full-cpu", ...flags, "--", "true"]))
+        .toThrow("--full-cpu requires");
+    }
+    expect(() => parseHostRunArguments(["--full-cpu", "--mode=exclusive", "--lane=mac-native", "--"]))
+      .toThrow("requires a command");
+    expect(parseHostRunArguments(["--", "true", "--full-cpu"]))
+      .toEqual({ command: ["true", "--full-cpu"], label: "true", lane: "compute", mode: "shared" });
+  });
+
+  test("full CPU API validation precedes runtime access", async () => {
+    for (const fullCpu of ["true", 1, null, {}, true]) {
+      await expect(runHostCommand({
+        command: ["true"], cwd: "/missing", label: "invalid", lane: "compute", mode: "shared",
+        fullCpu,
+        environment: { ATET_HOST_RESOURCES_MODULE: "/missing" },
+      } as unknown as HostRunOptions)).rejects.toThrow("full-cpu");
+    }
+    for (const mode of ["shared", "heavy", "exclusive"] as const) {
+      for (const lane of ["compute", "browser", "browser-auth", "mac-native"] as const) {
+        if (mode === "exclusive" && lane === "mac-native") continue;
+        await expect(runHostCommand({ command: ["true"], cwd: "/missing", label: "invalid", lane, mode, fullCpu: true, environment: {} }))
+          .rejects.toThrow("--full-cpu requires");
+      }
+    }
+  });
+
+  test("nested full CPU requires truthful full-capacity native ownership", () => {
+    for (const permits of [2, 4]) {
+      const inherited = parseInheritedLease(JSON.stringify({
+        capacity: 4, label: "native", lane: "mac-native", mode: "exclusive", permits, version: 2,
+      }));
+      expect(inheritedLeaseCovers(inherited, { lane: "mac-native", mode: "exclusive", fullCpu: true })).toBe(permits === 4);
+      expect(inheritedLeaseCovers(inherited, { lane: "mac-native", mode: "exclusive" })).toBe(true);
+      expect(inheritedLeaseCovers(inherited, { lane: "compute", mode: "exclusive" })).toBe(permits === 4);
+      expect(inheritedLeaseCovers(inherited, { lane: "browser", mode: "shared" })).toBe(false);
+    }
   });
 
   test("parses argv without invoking a shell", () => {
@@ -814,6 +873,93 @@ describe("host-wide resource wrapper", () => {
     ]) delete environment[key];
     return environment;
   };
+
+  test("full CPU native admission holds both real fixture claims before child and validates nested descriptors", () => {
+    if (process.platform !== "darwin") return;
+    const root = mkdtempSync(join(tmpdir(), "le-full-cpu-native-"));
+    try {
+      const modulePath = join(root, "host-resources.js");
+      const log = join(root, "claims.log");
+      const childMarker = join(root, "child-ran");
+      writeFileSync(modulePath, `
+        import { createHash } from "node:crypto";
+        import { appendFileSync, closeSync, openSync, unlinkSync, writeFileSync } from "node:fs";
+        export function createHostResourceCoordinator(options) {
+          return { async withLease(claims, callback) {
+            const resource = claims[0].resource;
+            const path = ${JSON.stringify(root)} + "/" + resource + ".lock";
+            appendFileSync(${JSON.stringify(log)}, JSON.stringify({ profile: options.profile, stateRoot: options.stateRoot, claims }) + "\\n");
+            writeFileSync(path, JSON.stringify({
+              version: 1, owner: "a".repeat(32), ticket: "1", phase: "A", claims,
+              profileSha256: createHash("sha256").update(JSON.stringify(options.profile)).digest("hex"),
+            }), { mode: 0o600 });
+            const descriptor = openSync(path, "r+");
+            try { return await callback({ inheritedFileDescriptor: descriptor }); }
+            finally { closeSync(descriptor); unlinkSync(path); }
+          } };
+        }
+      `);
+      for (const fullCpu of [false, true]) {
+        writeFileSync(log, "");
+        const childScript = `
+          import { existsSync, readFileSync } from "node:fs";
+          const root = ${JSON.stringify(root)};
+          if (!existsSync(root + "/mac-native.lock") || !existsSync(root + "/cpu.lock")) process.exit(20);
+          const entries = readFileSync(${JSON.stringify(log)}, "utf8").trim().split("\\n").map(JSON.parse);
+          if (entries.length !== 2 || entries[0].claims[0].resource !== "mac-native" || entries[1].claims[0].amount !== ${fullCpu ? permitCapacity() : Math.min(2, permitCapacity())}) process.exit(21);
+          await Bun.write(${JSON.stringify(childMarker)}, "ran");
+        `;
+        const result = Bun.spawnSync({
+          cmd: [process.execPath, join(import.meta.dir, "host-run.ts"), "--mode=exclusive", "--lane=mac-native",
+            ...(fullCpu ? ["--full-cpu"] : []), "--", process.execPath, "-e", childScript],
+          cwd: root,
+          env: { ...cleanEnvironment(), ATET_HOST_RESOURCES_MODULE: modulePath,
+            LOCAL_EFFICIENCY_STATE_ROOT: join(root, "state", "host-resources-v1"), LOCAL_EFFICIENCY_TELEMETRY: "off" },
+          stderr: "pipe", stdout: "pipe",
+        });
+        expect(result.exitCode, result.stderr.toString()).toBe(0);
+        expect(existsSync(childMarker)).toBe(true);
+        expect(existsSync(join(root, "cpu.lock"))).toBe(false);
+        expect(existsSync(join(root, "mac-native.lock"))).toBe(false);
+        const entries = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+        expect(entries[0].profile).toEqual(capabilityProfile);
+        expect(entries[0].claims).toEqual([{ resource: "mac-native", amount: 1 }]);
+        expect(entries[1].profile).toEqual({ id: `local-efficiency/v1-${permitCapacity()}`, capacities: [{ resource: "cpu", limit: permitCapacity() }] });
+        expect(entries[1].claims).toEqual([{ resource: "cpu", amount: fullCpu ? permitCapacity() : Math.min(2, permitCapacity()) }]);
+        rmSync(childMarker);
+      }
+      for (const { fullCpu, forged } of [{ fullCpu: false, forged: false }, { fullCpu: true, forged: false }, { fullCpu: true, forged: true }]) {
+        const covered = fullCpu || permitCapacity() <= 2;
+        const script = `
+          import { readFileSync, writeFileSync } from "node:fs";
+          if (${forged}) {
+            const path = ${JSON.stringify(join(root, "cpu.lock"))};
+            const marker = JSON.parse(readFileSync(path, "utf8"));
+            marker.claims[0].amount = 0;
+            writeFileSync(path, JSON.stringify(marker));
+          }
+          const { runHostCommand } = await import(${JSON.stringify(join(import.meta.dir, "host-run.ts"))});
+          for (const request of [{ lane: "mac-native", mode: "exclusive", fullCpu: true }, { lane: "mac-native", mode: "exclusive" }, { lane: "compute", mode: "exclusive" }]) {
+            await runHostCommand({ ...request, command: [${JSON.stringify(process.execPath)}, "-e", ${JSON.stringify(`await Bun.write(${JSON.stringify(childMarker)}, "ran")`)}], cwd: ${JSON.stringify(root)}, label: "nested" });
+          }
+        `;
+        const result = Bun.spawnSync({
+          cmd: [process.execPath, join(import.meta.dir, "host-run.ts"), "--mode=exclusive", "--lane=mac-native", ...(fullCpu ? ["--full-cpu"] : []), "--", process.execPath, "-e", script],
+          cwd: root,
+          env: { ...cleanEnvironment(), ATET_HOST_RESOURCES_MODULE: modulePath,
+            LOCAL_EFFICIENCY_STATE_ROOT: join(root, "state", "host-resources-v1"), LOCAL_EFFICIENCY_TELEMETRY: "off" },
+          stderr: "pipe", stdout: "pipe",
+        });
+        expect(result.exitCode === 0, result.stderr.toString()).toBe(covered && !forged);
+        expect(existsSync(childMarker)).toBe(covered && !forged);
+        if (forged) expect(result.stderr.toString()).toContain("lease descriptor does not cover");
+        if (!covered) expect(result.stderr.toString()).toContain("nested host-run cannot escalate");
+        if (covered && !forged) rmSync(childMarker);
+      }
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
 
   test("claims the browser lane from capabilities-v2 with capped permits and a 2h queue bound", () => {
     const root = mkdtempSync(join(tmpdir(), "le-browser-lane-"));
