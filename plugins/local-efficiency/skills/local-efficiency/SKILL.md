@@ -40,7 +40,7 @@ preserving sandbox, provider, repository, and release gates.
   absolute path and use `ABSOLUTE-HOST-RUN
   --mode=shared|heavy|exclusive
   --lane=compute|browser|browser-auth|mac-native --label=LABEL
-  [--max-hold=DURATION|none] -- COMMAND ...` through
+  [--max-hold=DURATION|none] [--full-cpu] -- COMMAND ...` through
   reviewed host access. Keep the complete wrapper and child argv visible to
   Codex.
 - **Record or reuse deterministic focused validation:** use `validation-run`.
@@ -144,10 +144,16 @@ package or command.
 
 The browser, browser-auth and Mac lanes bound their scarce capability while
 still sharing the weighted compute capacity; on those lanes `exclusive` means
-exclusive use of the capability and takes at most 2 CPU permits. A nested
-wrapper must be covered by the outer lane (a `browser-auth` owner may also run
-`browser` work); choose the top-level lane correctly instead of escalating it
-inside an existing lease.
+exclusive use of the capability and takes at most 2 CPU permits by default.
+For macOS-only work that needs all CPU capacity, opt in with
+`--mode=exclusive --lane=mac-native --full-cpu`. The bare `--full-cpu` flag is
+valid only with that mode and lane; it reserves every CPU permit and the one
+Mac-native slot before starting the command. Other modes and lanes reject it.
+A nested wrapper must be covered by the outer lane (a `browser-auth` owner may
+also run `browser` work) and CPU reservation. A two-permit native owner cannot
+escalate to full CPU on a machine with more than two permits; a full-capacity
+native owner covers ordinary or full-CPU native work and compute work. Choose
+the top-level reservation correctly instead of escalating inside a lease.
 
 Every admitted lease has a wall-clock cap: exclusive 60 min, browser 20 min,
 browser-auth 45 min (the smallest applicable wins; compute shared/heavy have

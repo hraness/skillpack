@@ -166,7 +166,17 @@ export type HostRunOptions = {
   readonly maxHoldMilliseconds?: number | null;
   readonly mode: ResourceMode;
   readonly stateRoot?: string;
+  readonly fullCpu?: boolean;
 };
+
+function validateFullCpu(mode: ResourceMode, lane: CapabilityLane, fullCpu: unknown): void {
+  if (fullCpu !== undefined && typeof fullCpu !== "boolean") {
+    throw new Error("--full-cpu must be a boolean");
+  }
+  if (fullCpu === true && (mode !== "exclusive" || lane !== "mac-native")) {
+    throw new Error("--full-cpu requires --mode=exclusive --lane=mac-native");
+  }
+}
 
 export function permitCapacity(hostParallelism = availableParallelism()): number {
   if (hostParallelism >= 12) return 4;
@@ -179,8 +189,9 @@ export function permitsForMode(
   mode: ResourceMode,
   hostParallelism = availableParallelism(),
   lane: CapabilityLane = "compute",
+  fullCpu = false,
 ): number {
-  return expectedPermits(mode, permitCapacity(hostParallelism), lane);
+  return expectedPermits(mode, permitCapacity(hostParallelism), lane, fullCpu);
 }
 
 /**
@@ -271,6 +282,7 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
   readonly lane: CapabilityLane;
   readonly maxHoldMilliseconds?: number | null;
   readonly mode: ResourceMode;
+  readonly fullCpu?: boolean;
 } {
   const delimiter = arguments_.indexOf("--");
   if (delimiter < 0) throw new Error("host-run requires -- before its command");
@@ -280,7 +292,13 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
   let mode: ResourceMode | undefined;
   let maxHold: number | null | undefined;
   let maxHoldSupplied = false;
+  let fullCpu = false;
   for (const argument of arguments_.slice(0, delimiter)) {
+    if (argument === "--full-cpu") {
+      if (fullCpu) throw new Error("--full-cpu may appear only once");
+      fullCpu = true;
+      continue;
+    }
     if (argument.startsWith("--max-hold=")) {
       if (maxHoldSupplied) throw new Error("--max-hold may appear only once");
       maxHold = parseDuration(argument.slice("--max-hold=".length));
@@ -320,8 +338,10 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
   if (containsControlCharacters(command[0])) {
     throw new Error("command program must contain no control characters");
   }
+  validateFullCpu(mode ?? "shared", lane, fullCpu);
   return {
     command,
+    ...(fullCpu ? { fullCpu: true } : {}),
     label: label ?? commandProgramLabel(command[0]),
     lane,
     ...(maxHoldSupplied ? { maxHoldMilliseconds: maxHold ?? null } : {}),
@@ -574,7 +594,10 @@ export function expectedPermits(
   mode: ResourceMode,
   capacity: number,
   lane: CapabilityLane = "compute",
+  fullCpu = false,
 ): number {
+  validateFullCpu(mode, lane, fullCpu);
+  if (fullCpu) return capacity;
   if (mode === "shared") return 1;
   if (mode === "heavy") return Math.min(2, capacity);
   return lane === "compute" ? capacity : Math.min(2, capacity);
@@ -756,7 +779,7 @@ function modeRank(mode: ResourceMode): number {
 
 export function inheritedLeaseCovers(
   inherited: InheritedLease,
-  requested: Pick<HostRunOptions, "lane" | "mode">,
+  requested: Pick<HostRunOptions, "lane" | "mode" | "fullCpu">,
 ): boolean {
   // The signed-in browser owner may also drive headless browsers.
   const capabilityCovered = requested.lane === "compute"
@@ -764,7 +787,7 @@ export function inheritedLeaseCovers(
     || (requested.lane === "browser" && inherited.lane === "browser-auth");
   return capabilityCovered
     && modeRank(inherited.mode) >= modeRank(requested.mode)
-    && expectedPermits(requested.mode, inherited.capacity, requested.lane) <= inherited.permits;
+    && expectedPermits(requested.mode, inherited.capacity, requested.lane, requested.fullCpu) <= inherited.permits;
 }
 
 export function permissionBoundaryDenied(error: unknown): boolean {
@@ -902,6 +925,7 @@ export class QueueTimeoutError extends Error {
 }
 
 export async function runHostCommand(options: HostRunOptions): Promise<number> {
+  validateFullCpu(options.mode, options.lane, options.fullCpu);
   const environment = { ...(options.environment ?? process.env) };
   if (!capabilityPlatformSupported(options.lane)) {
     throw new Error("the mac-native capability lane requires macOS");
@@ -916,7 +940,7 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
     return (await spawnCommand(options.command, options.cwd, environment)).exitCode;
   }
   const capacity = permitCapacity();
-  const permitCount = permitsForMode(options.mode, availableParallelism(), options.lane);
+  const permitCount = permitsForMode(options.mode, availableParallelism(), options.lane, options.fullCpu);
   const maxHold = options.maxHoldMilliseconds === undefined
     ? defaultMaxHoldMilliseconds(options.lane, options.mode)
     : options.maxHoldMilliseconds;
@@ -1107,7 +1131,7 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
 function usage(): string {
   return "Usage: host-run --mode=shared|heavy|exclusive"
     + " [--lane=compute|browser|browser-auth|mac-native] [--label=LABEL]"
-    + " [--max-hold=DURATION|none] -- COMMAND [ARGUMENT ...]";
+    + " [--full-cpu] [--max-hold=DURATION|none] -- COMMAND [ARGUMENT ...]";
 }
 
 if (import.meta.main) {
