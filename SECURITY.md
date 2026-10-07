@@ -5,7 +5,8 @@
 Do not open a public issue for a credential exposure, arbitrary command
 execution, path escape, or skill prompt-injection vulnerability. Report it to
 the repository maintainers through the private security-reporting channel of
-the canonical hosting project. Include the affected revision, reproduction,
+the canonical hosting project. If that reporting is unavailable, email
+[hraness@pm.me](mailto:hraness@pm.me). Include the affected revision, reproduction,
 impact, and whether a safe public test exists.
 
 ## Trust model
