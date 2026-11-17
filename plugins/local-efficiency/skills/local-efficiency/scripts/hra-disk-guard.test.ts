@@ -16,6 +16,7 @@ import {
   janitorSummary,
   reportDue,
   resolveDiskStateRoot,
+  sizeCandidates,
   topDirectories,
 } from "./hra-disk-guard";
 
@@ -137,6 +138,26 @@ describe("hra-disk-guard", () => {
       writeFileSync(join(root, "last-report.json"), JSON.stringify({ at: new Date().toISOString() }));
       expect(reportDue(root)).toBe(false);
       expect(reportDue(root, Date.now() + 25 * hour)).toBe(true);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("scans Git checkouts and linked worktrees across src and Documents", () => {
+    const root = mkdtempSync(join(tmpdir(), "le-disk-candidates-"));
+    try {
+      mkdirSync(join(root, "src", "primary", ".git"), { recursive: true });
+      mkdirSync(join(root, "src", "linked"), { recursive: true });
+      writeFileSync(join(root, "src", "linked", ".git"), "gitdir: ../primary/.git/worktrees/linked\n");
+      mkdirSync(join(root, "src", "notes"), { recursive: true });
+      mkdirSync(join(root, "Documents", "legacy", ".git"), { recursive: true });
+      mkdirSync(join(root, "scratch", "proj", "sess", "scratchpad"), { recursive: true });
+      expect(sizeCandidates(root, join(root, "scratch")).sort()).toEqual([
+        join(root, "Documents", "legacy"),
+        join(root, "scratch", "proj", "sess", "scratchpad"),
+        join(root, "src", "linked"),
+        join(root, "src", "primary"),
+      ]);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }

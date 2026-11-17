@@ -156,10 +156,14 @@ describe("dev-server-reap classification (report only)", () => {
         processInfo(63, 500, 5 * hour, "codex resume 0199"),
         processInfo(64, 500, 13 * hour, "/tmp/le-fixture/user/.local/bin/devin"),
         processInfo(65, 64, 13 * hour, "/tmp/le-fixture/user/.local/bin/devin acp"),
+        processInfo(66, 500, 2 * hour, "/tmp/le-fixture/user/.local/bin/claude"),
+        processInfo(67, 500, 3 * hour, "/tmp/le-fixture/user/.local/bin/agy"),
       ],
     }));
     expect(report.flushes.map((entry) => entry.pid)).toEqual([60]);
     expect(report.runtimes).toEqual([
+      { count: 1, name: "claude", oldestSeconds: 2 * hour, rssKilobytes: 150 * 1024 },
+      { count: 1, name: "agy", oldestSeconds: 3 * hour, rssKilobytes: 150 * 1024 },
       { count: 2, name: "codex node_repl", oldestSeconds: 13 * hour, rssKilobytes: 300 * 1024 },
       { count: 1, name: "codex resume", oldestSeconds: 5 * hour, rssKilobytes: 150 * 1024 },
       { count: 1, name: "devin", oldestSeconds: 13 * hour, rssKilobytes: 150 * 1024 },

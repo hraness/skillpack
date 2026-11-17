@@ -42,7 +42,8 @@ preserving sandbox, provider, repository, and release gates.
   --lane=compute|browser|browser-auth|mac-native --label=LABEL
   [--max-hold=DURATION|none] [--full-cpu] -- COMMAND ...` through
   reviewed host access. Keep the complete wrapper and child argv visible to
-  Codex.
+  Codex. Use `ABSOLUTE-HOST-RUN --status [--json]` for a read-only live holder
+  and permit census without acquiring a lease.
 - **Record or reuse deterministic focused validation:** use `validation-run`.
   Reuse is opt-in and is never valid for a required final integration,
   merge-queue, deployment, release, authenticated-browser, or network-sensitive
@@ -60,7 +61,9 @@ preserving sandbox, provider, repository, and release gates.
 
 Run scripts from the installed skill directory when the convenience commands
 are unavailable. `bootstrap.ts` installs or refreshes those commands under the
-user's Bun bin directory. It verifies a minimal pinned Atet host-resource
+user's Bun bin directory, mirroring the plugin into the user's local data
+directory when invoked from a versioned plugin cache so cache pruning cannot
+leave dangling links. It verifies a minimal pinned Atet host-resource
 runtime in the user's local data directory; it never replaces a global Atet
 package or command.
 
@@ -89,6 +92,14 @@ package or command.
   waiter. Do not hold a compute lease while waiting on external state.
 - Run the repository's aggregate/final gate once after convergence. Never use a
   receipt to skip a repository-required final replayed-tree or delivery gate.
+- When the host scheduler is saturated or a heavyweight gate would queue behind
+  unrelated work, prefer the repository's required CI check as the broad
+  aggregate: finish focused local validation, open the pull request, and let
+  `Required` run the broad suite on the PR head instead of holding a shared
+  lease. Keep narrow tests, typecheck, and lint local in the edit loop; keep
+  authenticated-browser, fixed-port, native-device, credential, and
+  private-data work on the documented local lanes; and honor any repository
+  rule that requires a local gate before pushing.
 - The host scheduler is an outer layer. Jungle and other repositories keep their own
   schedulers underneath it; invoke `host-run` only around top-level
   commands. Nested `host-run` calls inherit the outer lease and do not

@@ -261,6 +261,8 @@ export function classify(snapshot: Snapshot): Report {
     .map((entry) => finding(entry, "next-telemetry-flush", "detached-flush never exited", snapshot.cwds.get(entry.pid) ?? null, []));
 
   const runtimePatterns: readonly [string, RegExp][] = [
+    ["claude", /(^|\/)claude(\s|$)/u],
+    ["agy", /(^|\/)agy(\s|$)/u],
     ["codex node_repl", /\/node_repl(\s|$)/u],
     ["codex resume", /\bcodex\b.*\bresume\b/u],
     ["devin", /(^|\/)devin(\s|$)(?!.*\bacp\b)/u],

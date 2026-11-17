@@ -1,19 +1,25 @@
 #!/usr/bin/env bun
 
+import { randomUUID } from "node:crypto";
 import {
   chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   realpathSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+  canonicalIfPresent,
   ensureExactSymlink,
   normalizeTrailingNewline,
   readText,
@@ -179,6 +185,169 @@ function skillRoot(): string {
   return resolve(import.meta.dir, "..");
 }
 
+function sourcePluginRoot(): string {
+  return resolve(skillRoot(), "..", "..");
+}
+
+function resolveThroughExistingAncestor(path: string): string {
+  const target = resolve(path);
+  const tail: string[] = [];
+  let cursor = target;
+  for (;;) {
+    try {
+      return join(realpathSync(cursor), ...tail.reverse());
+    } catch (error: unknown) {
+      if (!missingPath(error)) return canonicalIfPresent(target);
+      const parent = dirname(cursor);
+      if (parent === cursor) return target;
+      tail.push(basename(cursor));
+      cursor = parent;
+    }
+  }
+}
+
+export function durablePluginRoot(runtimeRoot: string): string {
+  const base = resolveThroughExistingAncestor(dirname(dirname(resolve(runtimeRoot))));
+  return join(base, "plugins", pluginName);
+}
+
+export function isEphemeralCacheSkillRoot(
+  candidateSkillRoot: string,
+  codexHome: string,
+): boolean {
+  const cacheRoot = resolve(codexHome, "plugins", "cache");
+  let normalizedCache = cacheRoot;
+  let normalizedCandidate = resolve(candidateSkillRoot);
+  try {
+    normalizedCache = realpathSync(cacheRoot);
+  } catch {
+    // Cache root need not exist yet.
+  }
+  try {
+    normalizedCandidate = realpathSync(normalizedCandidate);
+  } catch {
+    // Candidate may be checked before creation in fixtures.
+  }
+  const rel = relative(normalizedCache, normalizedCandidate);
+  return rel !== "" && !isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`);
+}
+
+function effectiveSkillRoot(options: Pick<BootstrapOptions, "codexHome" | "runtimeRoot">): string {
+  if (isEphemeralCacheSkillRoot(skillRoot(), options.codexHome)) {
+    return join(durablePluginRoot(options.runtimeRoot), "skills", pluginName);
+  }
+  return skillRoot();
+}
+
+function collectPluginFiles(root: string, current = ""): readonly string[] {
+  const directory = current === "" ? root : join(root, current);
+  const entries = readdirSync(directory, { withFileTypes: true })
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const files: string[] = [];
+  for (const entry of entries) {
+    if (entry.name === ".git" || entry.name === "node_modules") continue;
+    const rel = current === "" ? entry.name : join(current, entry.name);
+    const fullPath = join(root, rel);
+    const metadata = lstatSync(fullPath);
+    if (metadata.isSymbolicLink()) {
+      throw new Error(`refusing symbolic link inside plugin source: ${fullPath}`);
+    }
+    if (metadata.isDirectory()) {
+      files.push(...collectPluginFiles(root, rel));
+    } else if (metadata.isFile()) {
+      files.push(rel);
+    }
+  }
+  return files;
+}
+
+function preflightDurableMirrorDirectory(destinationRoot: string): void {
+  let cursor = resolve(destinationRoot);
+  for (let depth = 0; depth < 4; depth += 1) {
+    try {
+      const metadata = lstatSync(cursor);
+      if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+        throw new Error(`refusing non-directory durable plugin mirror path: ${cursor}`);
+      }
+      break;
+    } catch (error: unknown) {
+      if (!missingPath(error)) throw error;
+    }
+    const parent = dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+}
+
+function writeAtomicBytes(path: string, bytes: Uint8Array, mode: number): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const parentMetadata = lstatSync(dirname(path));
+  if (!parentMetadata.isDirectory() || parentMetadata.isSymbolicLink()) {
+    throw new Error(`refusing non-directory durable plugin mirror parent: ${dirname(path)}`);
+  }
+  try {
+    const existing = lstatSync(path);
+    if (existing.isSymbolicLink() || !existing.isFile()) {
+      throw new Error(`refusing non-regular file in durable plugin mirror: ${path}`);
+    }
+  } catch (error: unknown) {
+    if (!missingPath(error)) throw error;
+  }
+  const temporary = join(
+    dirname(path),
+    `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  try {
+    writeFileSync(temporary, bytes, { mode });
+    chmodSync(temporary, mode);
+    renameSync(temporary, path);
+  } catch (error: unknown) {
+    try {
+      unlinkSync(temporary);
+    } catch { /* Preserve the primary write failure. */ }
+    throw error;
+  }
+}
+
+export function syncDurablePluginMirror(sourceRoot: string, destinationRoot: string): void {
+  preflightDurableMirrorDirectory(destinationRoot);
+  const files = collectPluginFiles(sourceRoot);
+  mkdirSync(destinationRoot, { recursive: true, mode: 0o700 });
+  for (const rel of files) {
+    const sourcePath = join(sourceRoot, rel);
+    const destinationPath = join(destinationRoot, rel);
+    const bytes = readFileSync(sourcePath);
+    const executable = dirname(rel) === join("skills", pluginName, "scripts")
+      && commandScripts.includes(basename(rel));
+    writeAtomicBytes(destinationPath, bytes, executable ? 0o755 : 0o644);
+  }
+}
+
+export function durableMirrorMatches(sourceRoot: string, destinationRoot: string): boolean {
+  try {
+    const rootMetadata = lstatSync(destinationRoot);
+    if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) return false;
+    const files = collectPluginFiles(sourceRoot);
+    for (const rel of files) {
+      const sourcePath = join(sourceRoot, rel);
+      const destinationPath = join(destinationRoot, rel);
+      const destinationMeta = lstatSync(destinationPath);
+      if (!destinationMeta.isFile() || destinationMeta.isSymbolicLink() || destinationMeta.nlink !== 1) {
+        return false;
+      }
+      const sourceBytes = readFileSync(sourcePath);
+      const destinationBytes = readFileSync(destinationPath);
+      if (
+        sourceBytes.byteLength !== destinationBytes.byteLength
+        || sha256(sourceBytes) !== sha256(destinationBytes)
+      ) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function asset(name: string): string {
   return readFileSync(join(skillRoot(), "assets", name), "utf8");
 }
@@ -256,7 +425,10 @@ export function claudeAutoModeCapability(
   }
 }
 
-export function commandTargets(bunBin: string): readonly [string, string][] {
+export function commandTargets(
+  bunBin: string,
+  targetSkillRoot = skillRoot(),
+): readonly [string, string][] {
   return [
     ["host-run", "host-run.ts"],
     ["validation-run", "validation-run.ts"],
@@ -274,7 +446,7 @@ export function commandTargets(bunBin: string): readonly [string, string][] {
     ["hra-chrome-restart", "hra-chrome-restart.ts"],
   ].map(([name, script]) => [
     join(bunBin, name as string),
-    join(skillRoot(), "scripts", script as string),
+    join(targetSkillRoot, "scripts", script as string),
   ] as const);
 }
 
@@ -807,7 +979,10 @@ function upsertJsonProperty(
   return `${value.slice(0, last.valueEnd)}${inserted}${value.slice(last.valueEnd)}`;
 }
 
+const allowedClaudeSessionTools = new Set(["CronCreate", "CronDelete", "CronList"]);
+
 function isBroadClaudePermissionAllow(rule: string): boolean {
+  if (allowedClaudeSessionTools.has(rule)) return false;
   // Claude permission rules name a whole tool when they contain only the tool
   // identifier. Keep this syntax-based so newly added built-ins and MCP tools
   // cannot silently bypass Auto mode's classifier.
@@ -977,10 +1152,11 @@ function expectedCodexRules(codexHome: string, bunBin: string): string {
 export function checkInstallation(
   options: BootstrapOptions,
   environment: Readonly<NodeJS.ProcessEnv> = process.env,
+  precomputedClaudeCapability?: ClaudeAutoModeCapability,
 ): string[] {
   const failures: string[] = [];
   const claudeHome = options.claudeHome ?? resolvedClaudeHome(environment);
-  const claudeCapability = claudeAutoModeCapability(environment);
+  const claudeCapability = precomputedClaudeCapability ?? claudeAutoModeCapability(environment);
   const agentsPath = join(options.codexHome, "AGENTS.md");
   try {
     regularFileModeOrDefault(agentsPath);
@@ -1038,7 +1214,13 @@ export function checkInstallation(
       failures.push(error instanceof Error ? error.message : String(error));
     }
   }
-  for (const [link, target] of commandTargets(options.bunBin)) {
+  const usesDurableMirror = isEphemeralCacheSkillRoot(skillRoot(), options.codexHome);
+  const mirrorRoot = durablePluginRoot(options.runtimeRoot);
+  if (usesDurableMirror && !durableMirrorMatches(sourcePluginRoot(), mirrorRoot)) {
+    failures.push(`durable plugin mirror differs: ${mirrorRoot}`);
+  }
+  const targetSkillRoot = effectiveSkillRoot(options);
+  for (const [link, target] of commandTargets(options.bunBin, targetSkillRoot)) {
     if (!symlinkMatches(target, link)) failures.push(`command link differs: ${link}`);
   }
   if (!dependencyAvailable(options.runtimeRoot, environment)) {
@@ -1047,9 +1229,12 @@ export function checkInstallation(
   return failures;
 }
 
-async function applyInstallation(options: BootstrapOptions): Promise<void> {
+async function applyInstallation(
+  options: BootstrapOptions,
+  precomputedClaudeCapability?: ClaudeAutoModeCapability,
+): Promise<ClaudeAutoModeCapability> {
   const claudeHome = options.claudeHome ?? resolvedClaudeHome();
-  const claudeCapability = claudeAutoModeCapability();
+  const claudeCapability = precomputedClaudeCapability ?? claudeAutoModeCapability();
   const agentsPath = join(options.codexHome, "AGENTS.md");
   const agentsMode = regularFileModeOrDefault(agentsPath);
   const configPath = join(options.codexHome, "config.toml");
@@ -1088,8 +1273,14 @@ async function applyInstallation(options: BootstrapOptions): Promise<void> {
       value,
     } as const;
   });
-  for (const [link, target] of commandTargets(options.bunBin)) {
-    if (!existsSync(target)) throw new Error(`plugin script is missing: ${target}`);
+  const usesDurableMirror = isEphemeralCacheSkillRoot(skillRoot(), options.codexHome);
+  const mirrorRoot = durablePluginRoot(options.runtimeRoot);
+  if (usesDurableMirror) preflightDurableMirrorDirectory(mirrorRoot);
+  const targetSkillRoot = effectiveSkillRoot(options);
+  for (const [, sourceTarget] of commandTargets(options.bunBin, skillRoot())) {
+    if (!existsSync(sourceTarget)) throw new Error(`plugin script is missing: ${sourceTarget}`);
+  }
+  for (const [link, target] of commandTargets(options.bunBin, targetSkillRoot)) {
     preflightManagedCommandSymlink(target, link, options.codexHome);
   }
   if (!dependencyAvailable(options.runtimeRoot) && !options.installDependency) {
@@ -1099,6 +1290,9 @@ async function applyInstallation(options: BootstrapOptions): Promise<void> {
   mkdirSync(options.codexHome, { recursive: true, mode: 0o700 });
   mkdirSync(claudeHome, { recursive: true, mode: 0o700 });
   mkdirSync(options.bunBin, { recursive: true, mode: 0o700 });
+  if (usesDurableMirror) {
+    syncDurablePluginMirror(sourcePluginRoot(), mirrorRoot);
+  }
   writeAtomic(agentsPath, agentsValue, agentsMode);
   writeAtomic(configPath, configValue, configMode);
   writeAtomic(rulesPath, rulesValue, rulesMode);
@@ -1109,7 +1303,7 @@ async function applyInstallation(options: BootstrapOptions): Promise<void> {
   for (const profile of profilePlans) {
     if (!profile.symlink) writeAtomic(profile.path, profile.value, profile.mode);
   }
-  for (const [link, target] of commandTargets(options.bunBin)) {
+  for (const [link, target] of commandTargets(options.bunBin, targetSkillRoot)) {
     chmodSync(target, 0o755);
     const result = ensureManagedCommandSymlink(target, link, options.codexHome);
     console.log(`${result.toUpperCase()}\t${link}\t${target}`);
@@ -1117,22 +1311,23 @@ async function applyInstallation(options: BootstrapOptions): Promise<void> {
   if (!dependencyAvailable(options.runtimeRoot)) {
     await installAtetRuntime(options.runtimeRoot);
   }
-  const failures = checkInstallation(options);
+  const failures = checkInstallation(options, process.env, claudeCapability);
   if (failures.length > 0) throw new Error(failures.join("\n"));
+  return claudeCapability;
 }
 
 if (import.meta.main) {
   try {
     const options = parseBootstrapArguments(process.argv.slice(2));
-    if (options.mode === "apply") await applyInstallation(options);
-    const failures = checkInstallation(options);
+    const claudeCapability = claudeAutoModeCapability();
+    if (options.mode === "apply") await applyInstallation(options, claudeCapability);
+    const failures = checkInstallation(options, process.env, claudeCapability);
     if (failures.length > 0) {
       for (const failure of failures) console.error(`FAIL\t${failure}`);
       process.exitCode = 1;
     } else {
       const agents = join(options.codexHome, "AGENTS.md");
       const metadata = lstatSync(agents);
-      const claudeCapability = claudeAutoModeCapability();
       if (!claudeCapability.available) {
         console.log(
           `SKIP\tClaude Auto mode unavailable (${claudeCapability.reason}); ordinary permission mode unchanged`,

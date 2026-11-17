@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { dlopen, FFIType, ptr } from "bun:ffi";
 import { spawn } from "node:child_process";
 import {
   existsSync,
@@ -816,6 +817,11 @@ export function capabilityPlatformSupported(
   return lane !== "mac-native" || platform === "darwin";
 }
 
+export type ProcessStartIdentity = {
+  readonly startedAtMs?: number;
+  readonly token: string;
+};
+
 export type HolderRecord = {
   readonly admittedAt: string;
   readonly label: string;
@@ -823,8 +829,86 @@ export type HolderRecord = {
   readonly mode: ResourceMode;
   readonly permits: number;
   readonly pid: number;
+  readonly pidStartToken?: string;
   readonly version: 1;
 };
+
+const holderFilePattern = /^([1-9][0-9]*)-[0-9a-f]{8,64}\.json$/u;
+const legacySkewToleranceMilliseconds = 60_000;
+const darwinProcPidTbsdInfo = 3;
+const darwinProcBsdInfoSize = 136;
+
+let darwinProcPidInfoSymbol: ((
+  pid: number,
+  flavor: number,
+  arg: bigint,
+  buffer: ReturnType<typeof ptr>,
+  bufferSize: number,
+) => number) | null | undefined;
+let cachedLinuxBootId: string | undefined;
+
+function darwinProcPidInfo() {
+  if (darwinProcPidInfoSymbol !== undefined) return darwinProcPidInfoSymbol;
+  try {
+    const library = dlopen("/usr/lib/libproc.dylib", {
+      proc_pidinfo: {
+        args: [FFIType.i32, FFIType.i32, FFIType.u64, FFIType.ptr, FFIType.i32],
+        returns: FFIType.i32,
+      },
+    });
+    darwinProcPidInfoSymbol = (pid, flavor, arg, buffer, bufferSize) =>
+      library.symbols.proc_pidinfo(pid, flavor, arg, buffer, bufferSize);
+  } catch {
+    darwinProcPidInfoSymbol = null;
+  }
+  return darwinProcPidInfoSymbol;
+}
+
+function linuxBootId(): string {
+  if (cachedLinuxBootId !== undefined) return cachedLinuxBootId;
+  try {
+    cachedLinuxBootId = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim() || "boot";
+  } catch {
+    cachedLinuxBootId = "boot";
+  }
+  return cachedLinuxBootId;
+}
+
+export function processStartIdentity(pid: number): ProcessStartIdentity | null {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  if (process.platform === "darwin") {
+    const fn = darwinProcPidInfo();
+    if (fn === null) return null;
+    try {
+      const buffer = Buffer.alloc(darwinProcBsdInfoSize);
+      const written = fn(pid, darwinProcPidTbsdInfo, 0n, ptr(buffer), darwinProcBsdInfoSize);
+      if (written < darwinProcBsdInfoSize) return null;
+      const seconds = buffer.readBigUInt64LE(120);
+      const microseconds = buffer.readBigUInt64LE(128);
+      if (seconds <= 0n) return null;
+      return {
+        startedAtMs: Number(seconds) * 1_000 + Math.floor(Number(microseconds) / 1_000),
+        token: `darwin:${seconds}:${microseconds}`,
+      };
+    } catch {
+      return null;
+    }
+  }
+  if (process.platform === "linux") {
+    try {
+      const raw = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const closeParen = raw.lastIndexOf(") ");
+      if (closeParen < 0) return null;
+      const fields = raw.slice(closeParen + 2).trim().split(/\s+/u);
+      const startTicks = fields[19];
+      if (startTicks === undefined || !/^[0-9]+$/u.test(startTicks)) return null;
+      return { token: `linux:${linuxBootId()}:${startTicks}` };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
 function processAlive(pid: number): boolean {
   try {
@@ -835,6 +919,41 @@ function processAlive(pid: number): boolean {
   }
 }
 
+function isValidHolderRecordShape(parsed: unknown): parsed is HolderRecord {
+  if (typeof parsed !== "object" || parsed === null) return false;
+  const candidate = parsed as Partial<HolderRecord>;
+  return candidate.version === 1
+    && typeof candidate.pid === "number"
+    && Number.isSafeInteger(candidate.pid)
+    && typeof candidate.label === "string"
+    && typeof candidate.admittedAt === "string"
+    && isCapabilityLane(candidate.lane)
+    && (candidate.pidStartToken === undefined || typeof candidate.pidStartToken === "string");
+}
+
+function holderProcessMatches(
+  record: HolderRecord,
+  alive: (pid: number) => boolean,
+  startIdentity: (pid: number) => ProcessStartIdentity | null,
+): boolean {
+  if (!alive(record.pid)) return false;
+  const current = startIdentity(record.pid);
+  if (current === null) return true;
+  if (record.pidStartToken !== undefined && record.pidStartToken !== "") {
+    return current.token === record.pidStartToken;
+  }
+  if (current.startedAtMs !== undefined) {
+    const admittedMs = Date.parse(record.admittedAt);
+    if (
+      Number.isFinite(admittedMs)
+      && current.startedAtMs > admittedMs + legacySkewToleranceMilliseconds
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function holderFileName(pid: number, token: string): string {
   return `${pid}-${token}.json`;
 }
@@ -843,8 +962,14 @@ function holderFileName(pid: number, token: string): string {
 export function registerHolder(root: string, record: HolderRecord, token: string): string | null {
   try {
     mkdirSync(root, { recursive: true, mode: 0o700 });
+    const identity = record.pidStartToken === undefined && record.pid === process.pid
+      ? processStartIdentity(record.pid)
+      : null;
+    const stored: HolderRecord = identity === null
+      ? record
+      : { ...record, pidStartToken: identity.token };
     const path = join(root, holderFileName(record.pid, token));
-    writeFileSync(path, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+    writeFileSync(path, `${JSON.stringify(stored)}\n`, { mode: 0o600 });
     return path;
   } catch {
     return null;
@@ -860,8 +985,55 @@ export function releaseHolder(path: string | null): void {
   }
 }
 
-/** Live holders only; records whose process is gone are ignored, never trusted. */
-export function readHolders(root: string, alive: (pid: number) => boolean = processAlive): HolderRecord[] {
+/**
+ * Removes holder records left behind by crashed/SIGKILLed processes whose PID is
+ * dead or has been recycled by the kernel. Invoked only on write paths.
+ */
+export function pruneStaleHolders(
+  root: string,
+  alive: (pid: number) => boolean = processAlive,
+  startIdentity: (pid: number) => ProcessStartIdentity | null =
+    alive === processAlive ? processStartIdentity : () => null,
+): number {
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return 0;
+  }
+  let removed = 0;
+  for (const name of names) {
+    const match = holderFilePattern.exec(name);
+    if (match === null) continue;
+    const filePid = Number(match[1]);
+    const path = join(root, name);
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+      if (isValidHolderRecordShape(parsed) && !holderProcessMatches(parsed, alive, startIdentity)) {
+        unlinkSync(path);
+        removed += 1;
+      }
+    } catch {
+      if (!alive(filePid)) {
+        try {
+          unlinkSync(path);
+          removed += 1;
+        } catch {
+          // racing release
+        }
+      }
+    }
+  }
+  return removed;
+}
+
+/** Live holders only; records whose process is gone or recycled are ignored, never trusted. */
+export function readHolders(
+  root: string,
+  alive: (pid: number) => boolean = processAlive,
+  startIdentity: (pid: number) => ProcessStartIdentity | null =
+    alive === processAlive ? processStartIdentity : () => null,
+): HolderRecord[] {
   let names: string[];
   try {
     names = readdirSync(root);
@@ -869,17 +1041,12 @@ export function readHolders(root: string, alive: (pid: number) => boolean = proc
     return [];
   }
   const holders: HolderRecord[] = [];
-  for (const name of names.slice(0, 256)) {
-    if (!/^[1-9][0-9]*-[0-9a-f]{8,64}\.json$/u.test(name)) continue;
+  for (const name of names.filter((entry) => holderFilePattern.test(entry)).slice(0, 1_024)) {
     try {
-      const parsed = JSON.parse(readFileSync(join(root, name), "utf8")) as HolderRecord;
-      if (
-        parsed.version === 1
-        && Number.isSafeInteger(parsed.pid)
-        && typeof parsed.label === "string"
-        && isCapabilityLane(parsed.lane)
-        && alive(parsed.pid)
-      ) holders.push(parsed);
+      const parsed: unknown = JSON.parse(readFileSync(join(root, name), "utf8"));
+      if (isValidHolderRecordShape(parsed) && holderProcessMatches(parsed, alive, startIdentity)) {
+        holders.push(parsed);
+      }
     } catch {
       // unreadable or racing with release
     }
@@ -1052,6 +1219,7 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
           console.error(
             `[host-run] admitted ${options.label} after ${waitedSeconds.toFixed(1)}s`,
           );
+          pruneStaleHolders(holderRoot);
           holderPath = registerHolder(holderRoot, {
             admittedAt: execution.admittedAt.toISOString(),
             label: options.label,
@@ -1128,16 +1296,164 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
   }
 }
 
+export type HostRunCliAction =
+  | { readonly kind: "help" }
+  | { readonly json: boolean; readonly kind: "status" }
+  | { readonly kind: "run"; readonly parsed: ReturnType<typeof parseHostRunArguments> };
+
+export function parseHostRunCli(arguments_: readonly string[]): HostRunCliAction {
+  if (!arguments_.includes("--")) {
+    if (arguments_.length === 1 && (arguments_[0] === "-h" || arguments_[0] === "--help")) {
+      return { kind: "help" };
+    }
+    if (arguments_.includes("--status")) {
+      let json = false;
+      let statusCount = 0;
+      for (const argument of arguments_) {
+        if (argument === "--status") statusCount += 1;
+        else if (argument === "--json") {
+          if (json) throw new Error("--json may appear only once");
+          json = true;
+        } else {
+          throw new Error(`unknown host-run --status argument: ${argument}`);
+        }
+      }
+      if (statusCount > 1) throw new Error("--status may appear only once");
+      return { json, kind: "status" };
+    }
+  }
+  return { kind: "run", parsed: parseHostRunArguments(arguments_) };
+}
+
+export type HostStatusLaneSummary = {
+  readonly activeCount: number;
+  readonly limit: number | null;
+  readonly resource: CapabilityLane;
+};
+
+export type HostStatusHolder = HolderRecord & {
+  readonly heldMilliseconds: number;
+  readonly heldText: string;
+};
+
+export type HostStatusReport = {
+  readonly availablePermits: number;
+  readonly capacity: number;
+  readonly generatedAt: string;
+  readonly holders: readonly HostStatusHolder[];
+  readonly hostParallelism: number;
+  readonly lanes: readonly HostStatusLaneSummary[];
+  readonly note: "partial-holder-census-not-admission-authority";
+  readonly profileId: string;
+  readonly usedPermits: number;
+  readonly version: 1;
+};
+
+function probeReadableStateDirectory(path: string): void {
+  try {
+    readdirSync(path);
+  } catch (error: unknown) {
+    if (permissionBoundaryDenied(error)) throw new HostAccessRequiredError();
+  }
+}
+
+export function hostStatusReport(options: {
+  readonly alive?: (pid: number) => boolean;
+  readonly environment?: Readonly<NodeJS.ProcessEnv>;
+  readonly hostParallelism?: number;
+  readonly now?: Date;
+  readonly startIdentity?: (pid: number) => ProcessStartIdentity | null;
+  readonly stateRoot?: string;
+} = {}): HostStatusReport {
+  const environment = options.environment ?? process.env;
+  const now = options.now ?? new Date();
+  const hostParallelism = options.hostParallelism ?? availableParallelism();
+  const capacity = permitCapacity(hostParallelism);
+  const stateRoot = options.stateRoot ?? resolveHostResourceStateRoot(environment);
+  const holderRoot = resolveHolderRoot(stateRoot);
+  probeReadableStateDirectory(stateRoot);
+  probeReadableStateDirectory(holderRoot);
+  const rawHolders = readHolders(holderRoot, options.alive, options.startIdentity);
+  const holders: HostStatusHolder[] = rawHolders.map((holder) => {
+    const admittedMs = Date.parse(holder.admittedAt);
+    const heldMilliseconds = Number.isFinite(admittedMs)
+      ? Math.max(0, now.getTime() - admittedMs)
+      : 0;
+    return {
+      ...holder,
+      heldMilliseconds,
+      heldText: formatDuration(heldMilliseconds),
+    };
+  });
+  const usedPermits = Math.min(
+    capacity,
+    holders.reduce((sum, holder) => sum + holder.permits, 0),
+  );
+  const laneLimits = new Map<CapabilityLane, number | null>([
+    ["compute", null],
+    ...capabilityProfile.capacities.map((entry) => [entry.resource as CapabilityLane, entry.limit] as const),
+  ]);
+  const lanes: HostStatusLaneSummary[] = capabilityLanes.map((resource) => ({
+    activeCount: holders.filter((holder) => holder.lane === resource).length,
+    limit: laneLimits.get(resource) ?? null,
+    resource,
+  }));
+  return {
+    availablePermits: Math.max(0, capacity - usedPermits),
+    capacity,
+    generatedAt: now.toISOString(),
+    holders,
+    hostParallelism,
+    lanes,
+    note: "partial-holder-census-not-admission-authority",
+    profileId: capabilityProfile.id,
+    usedPermits,
+    version: 1,
+  };
+}
+
+export function formatHostStatus(report: HostStatusReport): string {
+  const lines = [
+    `CAPACITY\tcpu=${report.usedPermits}/${report.capacity}\tavailable=${report.availablePermits}\tcores=${report.hostParallelism}\tprofile=${report.profileId}`,
+    ...report.lanes.map((lane) =>
+      `LANE\t${lane.resource}\tactive=${lane.activeCount}\tlimit=${lane.limit === null ? "cpu-permits" : String(lane.limit)}`),
+  ];
+  if (report.holders.length === 0) {
+    lines.push("HOLDERS\tnone");
+  } else {
+    for (const holder of report.holders) {
+      lines.push(
+        `HOLDER\tpid=${holder.pid}\tlane=${holder.lane}\tmode=${holder.mode}\tpermits=${holder.permits}\theld=${holder.heldText}\tlabel=${holder.label}`,
+      );
+    }
+  }
+  lines.push("NOTE\tHolder reports are a live-process census, not admission authority.");
+  return lines.join("\n");
+}
+
 function usage(): string {
-  return "Usage: host-run --mode=shared|heavy|exclusive"
-    + " [--lane=compute|browser|browser-auth|mac-native] [--label=LABEL]"
-    + " [--full-cpu] [--max-hold=DURATION|none] -- COMMAND [ARGUMENT ...]";
+  return [
+    "Usage: host-run --mode=shared|heavy|exclusive"
+      + " [--lane=compute|browser|browser-auth|mac-native] [--label=LABEL]"
+      + " [--full-cpu] [--max-hold=DURATION|none] -- COMMAND [ARGUMENT ...]",
+    "       host-run --status [--json]",
+    "       host-run --help",
+  ].join("\n");
 }
 
 if (import.meta.main) {
   try {
-    const parsed = parseHostRunArguments(process.argv.slice(2));
-    process.exitCode = await runHostCommand({ ...parsed, cwd: process.cwd() });
+    const action = parseHostRunCli(process.argv.slice(2));
+    if (action.kind === "help") {
+      console.log(usage());
+      process.exitCode = 0;
+    } else if (action.kind === "status") {
+      const report = hostStatusReport();
+      console.log(action.json ? JSON.stringify(report, null, 2) : formatHostStatus(report));
+      process.exitCode = 0;
+    } else {
+      process.exitCode = await runHostCommand({ ...action.parsed, cwd: process.cwd() });
+    }
   } catch (error) {
     if (error instanceof HostAccessRequiredError) {
       console.error(`[host-run] ${error.code}: ${error.message}`);
