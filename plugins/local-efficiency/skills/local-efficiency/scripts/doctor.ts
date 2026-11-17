@@ -73,15 +73,16 @@ export function doctorReport(
     mode: "check",
     runtimeRoot: resolveAtetRuntimeRoot(environment),
   };
+  const claudeAutoMode = claudeAutoModeCapability(environment);
   let failures: readonly string[];
   try {
-    failures = checkInstallation(bootstrapOptions, environment);
+    failures = checkInstallation(bootstrapOptions, environment, claudeAutoMode);
   } catch (error: unknown) {
     failures = [`installation check failed: ${error instanceof Error ? error.message : String(error)}`];
   }
   return {
     bunBin: options.bunBin,
-    claudeAutoMode: claudeAutoModeCapability(environment),
+    claudeAutoMode,
     claudeHome: options.claudeHome,
     codexHome: options.codexHome,
     failures,

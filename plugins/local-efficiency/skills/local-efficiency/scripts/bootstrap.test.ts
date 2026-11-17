@@ -18,8 +18,10 @@ import { join } from "node:path";
 
 import {
   claudeAutoModeCapability,
+  durablePluginRoot,
   ensureManagedCommandSymlink,
   parseBootstrapArguments,
+  syncDurablePluginMirror,
 } from "./bootstrap";
 
 const temporary: string[] = [];
@@ -114,7 +116,7 @@ describe("machine bootstrap", () => {
     const originalClaudeSettings = `{
   "keep": { "spacing":  true },
   "permissions": {
-    "allow": ["Read", "PowerShell", "Monitor", "NotebookEdit", "Artifact", "Workflow", "mcp__example__deploy", "NotebookEdit(*)", "Artifact(**)", "Workflow(/**)", "mcp__example__deploy( * )", "PowerShell(*)", "Bash(gh *)", "Bash(gh:*)", "Bash(gh release *)", "Bash(python*)", "Bash(vercel *)", "Bash(bun run cli *)", "Bash(git status)", "Read(./docs/**)"],
+    "allow": ["Read", "PowerShell", "Monitor", "NotebookEdit", "Artifact", "Workflow", "mcp__example__deploy", "NotebookEdit(*)", "Artifact(**)", "Workflow(/**)", "mcp__example__deploy( * )", "PowerShell(*)", "Bash(gh *)", "Bash(gh:*)", "Bash(gh release *)", "Bash(python*)", "Bash(vercel *)", "Bash(bun run cli *)", "Bash(git status)", "Read(./docs/**)", "CronCreate", "CronDelete", "CronList"],
     "deny": ["Bash(rm -rf *)"],
     "defaultMode": "default"
   },
@@ -168,7 +170,7 @@ describe("machine bootstrap", () => {
     expect(statSync(join(codexHome, "config.toml")).mode & 0o777).toBe(0o640);
     const claudeSettingsText = readFileSync(join(claudeHome, "settings.json"), "utf8");
     expect(claudeSettingsText).toContain('  "keep": { "spacing":  true },');
-    expect(claudeSettingsText).toContain('    "allow": ["Bash(git status)","Read(./docs/**)"]');
+    expect(claudeSettingsText).toContain('    "allow": ["Bash(git status)","Read(./docs/**)","CronCreate","CronDelete","CronList"]');
     expect(claudeSettingsText).toContain('    "deny": ["Bash(rm -rf *)"],');
     expect(claudeSettingsText).not.toContain('"Bash(gh *)"');
     expect(claudeSettingsText).not.toContain('"Bash(vercel *)"');
@@ -197,6 +199,9 @@ describe("machine bootstrap", () => {
     expect(parsedClaudeSettings.permissions.allow).toEqual([
       "Bash(git status)",
       "Read(./docs/**)",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
     ]);
     expect(parsedClaudeSettings.permissions.deny).toEqual(["Bash(rm -rf *)"]);
     expect(parsedClaudeSettings.autoMode.allow).toEqual(["$defaults", "Bash(git status)"]);
@@ -844,5 +849,96 @@ describe("machine bootstrap", () => {
     expect(result.stderr.toString()).toContain("refusing to replace unmanaged command symlink");
     expect(readlinkSync(join(bunBin, "host-run"))).toBe(userTarget);
     expect(readFileSync(userTarget, "utf8")).toBe("user-owned command\n");
+  });
+
+  test("mirrors plugin-cache installs into durable storage so cache pruning keeps commands live", () => {
+    const root = mkdtempSync(join(tmpdir(), "local-efficiency-bootstrap-durable-mirror-"));
+    temporary.push(root);
+    const codexHome = join(root, "codex");
+    const claudeHome = join(root, "claude");
+    const bunBin = join(root, "bin");
+    const runtimeRoot = join(root, "share", "local-efficiency", "runtime", "atet-v2.0.0");
+    const cachePluginRoot = join(
+      codexHome,
+      "plugins",
+      "cache",
+      "hraness-skillpack",
+      "local-efficiency",
+      "0.5.2",
+    );
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(claudeHome, { recursive: true });
+    mkdirSync(bunBin, { recursive: true });
+    syncDurablePluginMirror(join(import.meta.dir, "..", "..", ".."), cachePluginRoot);
+    const modulePath = join(root, "host-resources.js");
+    writeFileSync(modulePath, "export const createHostResourceCoordinator = () => ({})\n");
+    const environment = {
+      ...fakeClaude(root),
+      ATET_HOST_RESOURCES_MODULE: modulePath,
+      LOCAL_EFFICIENCY_RUNTIME_ROOT: runtimeRoot,
+    };
+    const cacheBootstrap = join(
+      cachePluginRoot,
+      "skills",
+      "local-efficiency",
+      "scripts",
+      "bootstrap.ts",
+    );
+    const applied = Bun.spawnSync({
+      cmd: [
+        process.execPath,
+        cacheBootstrap,
+        "--apply",
+        "--skip-dependency-install",
+        "--codex-home",
+        codexHome,
+        "--claude-home",
+        claudeHome,
+        "--bun-bin",
+        bunBin,
+      ],
+      env: environment,
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+    expect(applied.exitCode, applied.stderr.toString()).toBe(0);
+
+    const expectedMirror = durablePluginRoot(runtimeRoot);
+    expect(readlinkSync(join(bunBin, "host-run"))).toBe(
+      join(expectedMirror, "skills", "local-efficiency", "scripts", "host-run.ts"),
+    );
+
+    // Simulate Codex pruning the versioned plugin cache directory after an upgrade.
+    rmSync(join(codexHome, "plugins", "cache"), { recursive: true, force: true });
+
+    const helpRun = Bun.spawnSync({
+      cmd: [process.execPath, join(bunBin, "host-run"), "--help"],
+      env: environment,
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+    expect(helpRun.exitCode, helpRun.stderr.toString()).toBe(0);
+
+    const doctorRun = Bun.spawnSync({
+      cmd: [
+        process.execPath,
+        join(bunBin, "local-efficiency"),
+        "--json",
+        "--codex-home",
+        codexHome,
+        "--claude-home",
+        claudeHome,
+        "--bun-bin",
+        bunBin,
+      ],
+      env: environment,
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+    expect(doctorRun.exitCode, doctorRun.stderr.toString()).toBe(0);
+    expect(JSON.parse(doctorRun.stdout.toString())).toMatchObject({
+      failures: [],
+      ok: true,
+    });
   });
 });

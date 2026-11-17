@@ -274,7 +274,7 @@ export function formatJanitorReport(report: JanitorReport): string {
   return lines.join("\n");
 }
 
-/** Scratchpads (/private/tmp/claude-<uid>/<project>/<session>/scratchpad) and ~/Documents worktrees. */
+/** Scratchpads (/private/tmp/claude-<uid>/<project>/<session>/scratchpad) and ~/src + ~/Documents worktrees. */
 export function sizeCandidates(
   userHome = homedir(),
   scratchRoot = join("/private/tmp", `claude-${process.getuid?.() ?? 501}`),
@@ -286,10 +286,11 @@ export function sizeCandidates(
       if (existsSync(scratchpad)) candidates.push(scratchpad);
     }
   }
-  const documents = join(userHome, "Documents");
-  for (const name of safeList(documents)) {
-    const path = join(documents, name);
-    if (existsSync(join(path, ".git"))) candidates.push(path);
+  for (const workspaceRoot of [join(userHome, "src"), join(userHome, "Documents")]) {
+    for (const name of safeList(workspaceRoot)) {
+      const path = join(workspaceRoot, name);
+      if (existsSync(join(path, ".git"))) candidates.push(path);
+    }
   }
   return candidates;
 }

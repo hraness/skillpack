@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { parseWorkspaceAuditArguments } from "./workspace-audit";
+import {
+  defaultWorkspaceRoots,
+  parseWorkspaceAuditArguments,
+  repositoriesUnder,
+} from "./workspace-audit";
 
 const temporary: string[] = [];
 
@@ -75,5 +79,33 @@ describe("workspace audit arguments", () => {
     expect(payload.repositories[0]).toHaveProperty("guidanceStatus", "needs-update");
     expect(existsSync(join(repository, "AGENTS.md"))).toBe(false);
     expect(existsSync(join(repository, "CLAUDE.md"))).toBe(false);
+  });
+
+  test("discovers existing src and Documents roots and ignores ancestor git repos", () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "le-workspace-roots-"));
+    temporary.push(fakeHome);
+    expect(defaultWorkspaceRoots(fakeHome)).toEqual([join(fakeHome, "Documents")]);
+    mkdirSync(join(fakeHome, "src"), { recursive: true });
+    expect(defaultWorkspaceRoots(fakeHome)).toEqual([join(fakeHome, "src")]);
+    mkdirSync(join(fakeHome, "Documents"), { recursive: true });
+    expect(defaultWorkspaceRoots(fakeHome)).toEqual([
+      join(fakeHome, "src"),
+      join(fakeHome, "Documents"),
+    ]);
+    expect(parseWorkspaceAuditArguments([], fakeHome).roots).toEqual([
+      join(fakeHome, "src"),
+      join(fakeHome, "Documents"),
+    ]);
+
+    const run = (arguments_: readonly string[], cwd = fakeHome): void => {
+      const result = Bun.spawnSync({ cmd: [...arguments_], cwd, stderr: "pipe", stdout: "pipe" });
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+    };
+    // Make fakeHome itself a Hraness git repository and verify non-git subfolders under src are ignored.
+    run(["git", "init", "--initial-branch=main", fakeHome]);
+    run(["git", "remote", "add", "origin", "https://github.com/hraness/home-root.git"], fakeHome);
+    mkdirSync(join(fakeHome, "src", "plain-folder"), { recursive: true });
+    expect(repositoriesUnder(join(fakeHome, "src"))).toEqual([]);
+    expect(repositoriesUnder(join(fakeHome, "missing"))).toEqual([]);
   });
 });

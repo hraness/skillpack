@@ -19,9 +19,12 @@ import {
   chromeEnvironment,
   defaultMaxHoldMilliseconds,
   describeHolders,
+  formatHostStatus,
   holdTimeoutExitCode,
+  hostStatusReport,
   jobEnvironment,
   parseDuration,
+  parseHostRunCli,
   queueTimeoutExitCode,
   queueTimeoutMilliseconds,
   readHolders,
@@ -36,6 +39,8 @@ import {
   permissionBoundaryDenied,
   permitCapacity,
   permitsForMode,
+  processStartIdentity,
+  pruneStaleHolders,
   resolveAtetHostResourceModule,
   resolveAtetRuntimeRoot,
   resolveCapabilityStateRoot,
@@ -839,6 +844,88 @@ describe("host-wide resource wrapper", () => {
     }
   });
 
+  test("detects recycled holder PIDs without mutating on read and prunes orphans on write", () => {
+    const root = mkdtempSync(join(tmpdir(), "le-holder-pid-reuse-"));
+    try {
+      if (process.platform === "darwin" || process.platform === "linux") {
+        const selfIdentity = processStartIdentity(process.pid);
+        expect(selfIdentity).not.toBeNull();
+        const selfPath = registerHolder(root, {
+          admittedAt: "2026-11-17T00:00:00.000Z",
+          label: "self-run",
+          lane: "compute",
+          mode: "shared",
+          permits: 1,
+          pid: process.pid,
+          version: 1,
+        }, "1010101010101010");
+        expect(selfPath).not.toBeNull();
+        const storedSelf = JSON.parse(readFileSync(selfPath ?? "", "utf8")) as { pidStartToken?: string };
+        expect(storedSelf.pidStartToken).toBe(selfIdentity?.token);
+        releaseHolder(selfPath);
+      }
+
+      registerHolder(root, {
+        admittedAt: "2026-10-22T03:59:00.000Z",
+        label: "genuine-holder",
+        lane: "compute",
+        mode: "heavy",
+        permits: 2,
+        pid: 5100,
+        pidStartToken: "darwin:100:1",
+        version: 1,
+      }, "1111111111111111");
+      registerHolder(root, {
+        admittedAt: "2026-10-22T04:00:00.000Z",
+        label: "recycled-token-holder",
+        lane: "compute",
+        mode: "heavy",
+        permits: 2,
+        pid: 5255,
+        pidStartToken: "darwin:100:2",
+        version: 1,
+      }, "2222222222222222");
+      registerHolder(root, {
+        admittedAt: "2026-10-22T04:01:00.000Z",
+        label: "legacy-recycled-holder",
+        lane: "compute",
+        mode: "heavy",
+        permits: 2,
+        pid: 5300,
+        version: 1,
+      }, "3333333333333333");
+      registerHolder(root, {
+        admittedAt: "2026-10-22T04:02:00.000Z",
+        label: "dead-holder",
+        lane: "compute",
+        mode: "shared",
+        permits: 1,
+        pid: 5400,
+        pidStartToken: "darwin:100:4",
+        version: 1,
+      }, "4444444444444444");
+      writeFileSync(join(root, "5500-5555555555555555.json"), "{corrupt");
+
+      const alive = (pid: number) => pid === 5100 || pid === 5255 || pid === 5300;
+      const startIdentity = (pid: number) => {
+        if (pid === 5100) return { startedAtMs: Date.parse("2026-10-22T03:58:55.000Z"), token: "darwin:100:1" };
+        if (pid === 5255) return { startedAtMs: Date.parse("2026-11-17T15:00:00.000Z"), token: "darwin:999:9" };
+        if (pid === 5300) return { startedAtMs: Date.parse("2026-11-17T15:00:00.000Z"), token: "darwin:999:8" };
+        return null;
+      };
+
+      const live = readHolders(root, alive, startIdentity);
+      expect(live.map((holder) => holder.label)).toEqual(["genuine-holder"]);
+      expect(readdirSync(root)).toHaveLength(5);
+
+      const pruned = pruneStaleHolders(root, alive, startIdentity);
+      expect(pruned).toBe(4);
+      expect(readdirSync(root)).toEqual(["5100-1111111111111111.json"]);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
   const passThroughModule = (root: string, log?: string): string => {
     const modulePath = join(root, "host-resources.js");
     writeFileSync(modulePath, `
@@ -1100,6 +1187,102 @@ describe("host-wide resource wrapper", () => {
       expect(stderr).toContain(`algal-marketing-preview (pid ${process.pid}, shared browser-auth`);
       expect(stderr).toContain("held 3h00m");
       expect(stderr).toContain("QUEUE_TIMEOUT");
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("supports --help and read-only --status without acquiring a lease", () => {
+    expect(parseHostRunCli(["--help"])).toEqual({ kind: "help" });
+    expect(parseHostRunCli(["-h"])).toEqual({ kind: "help" });
+    expect(parseHostRunCli(["--status"])).toEqual({ json: false, kind: "status" });
+    expect(parseHostRunCli(["--status", "--json"])).toEqual({ json: true, kind: "status" });
+    expect(parseHostRunCli(["--", "echo", "--status", "--help"])).toEqual({
+      kind: "run",
+      parsed: {
+        command: ["echo", "--status", "--help"],
+        label: "echo",
+        lane: "compute",
+        mode: "shared",
+      },
+    });
+    expect(() => parseHostRunCli(["--status", "--mode=heavy"]))
+      .toThrow("unknown host-run --status argument");
+    expect(() => parseHostRunCli(["--status", "--status"]))
+      .toThrow("--status may appear only once");
+
+    const root = mkdtempSync(join(tmpdir(), "le-host-status-"));
+    try {
+      const stateRoot = join(root, "state", "host-resources-v1");
+      const holders = join(root, "state", "holders-v1");
+      mkdirSync(holders, { recursive: true });
+      const now = new Date("2026-11-17T18:00:00.000Z");
+      registerHolder(holders, {
+        admittedAt: new Date(now.getTime() - 95_000).toISOString(),
+        label: "repo-check",
+        lane: "compute",
+        mode: "heavy",
+        permits: 2,
+        pid: 101,
+        version: 1,
+      }, "1111111111111111");
+      registerHolder(holders, {
+        admittedAt: new Date(now.getTime() - 30_000).toISOString(),
+        label: "dead-holder",
+        lane: "browser-auth",
+        mode: "exclusive",
+        permits: 2,
+        pid: 999999,
+        version: 1,
+      }, "2222222222222222");
+
+      const report = hostStatusReport({
+        alive: (pid) => pid === 101,
+        hostParallelism: 16,
+        now,
+        stateRoot,
+      });
+      expect(report).toMatchObject({
+        availablePermits: 2,
+        capacity: 4,
+        hostParallelism: 16,
+        note: "partial-holder-census-not-admission-authority",
+        profileId: "local-efficiency/capabilities-v2",
+        usedPermits: 2,
+        version: 1,
+      });
+      expect(report.holders).toHaveLength(1);
+      expect(report.holders[0]).toMatchObject({
+        heldMilliseconds: 95_000,
+        heldText: "1m35s",
+        label: "repo-check",
+        pid: 101,
+      });
+      const text = formatHostStatus(report);
+      expect(text).toContain("CAPACITY\tcpu=2/4\tavailable=2\tcores=16");
+      expect(text).toContain("HOLDER\tpid=101\tlane=compute\tmode=heavy\tpermits=2\theld=1m35s\tlabel=repo-check");
+
+      const helpResult = Bun.spawnSync({
+        cmd: [process.execPath, join(import.meta.dir, "host-run.ts"), "--help"],
+        stderr: "pipe",
+        stdout: "pipe",
+      });
+      expect(helpResult.exitCode).toBe(0);
+      expect(helpResult.stdout.toString()).toContain("host-run --status [--json]");
+
+      const statusResult = Bun.spawnSync({
+        cmd: [process.execPath, join(import.meta.dir, "host-run.ts"), "--status", "--json"],
+        env: {
+          ...cleanEnvironment(),
+          LOCAL_EFFICIENCY_STATE_ROOT: stateRoot,
+        },
+        stderr: "pipe",
+        stdout: "pipe",
+      });
+      expect(statusResult.exitCode, statusResult.stderr.toString()).toBe(0);
+      const parsedStatus = JSON.parse(statusResult.stdout.toString()) as { version: number };
+      expect(parsedStatus.version).toBe(1);
+      expect(existsSync(join(root, "state", "telemetry-v1"))).toBe(false);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }

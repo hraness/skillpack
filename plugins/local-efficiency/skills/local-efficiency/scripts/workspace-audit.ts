@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { decideDiskHeadroom, readDiskHeadroom } from "./check-disk-headroom";
 import { runRepositoryAdoption } from "./repo-adoption";
-import { command } from "./shared";
+import { canonicalIfPresent, command } from "./shared";
 
 type AuditOptions = {
   readonly fetch: boolean;
@@ -34,7 +34,22 @@ type SerializableWorkspaceAudit = {
   readonly repositories: readonly RepositoryAudit[];
 };
 
-export function parseWorkspaceAuditArguments(arguments_: readonly string[]): AuditOptions {
+export function defaultWorkspaceRoots(userHome = homedir()): string[] {
+  const candidates = [join(userHome, "src"), join(userHome, "Documents")];
+  const existing = candidates.filter((candidate) => {
+    try {
+      return statSync(candidate).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+  return existing.length > 0 ? existing : [join(userHome, "Documents")];
+}
+
+export function parseWorkspaceAuditArguments(
+  arguments_: readonly string[],
+  userHome = homedir(),
+): AuditOptions {
   let fetch = false;
   let json = false;
   let sizes = false;
@@ -56,16 +71,28 @@ export function parseWorkspaceAuditArguments(arguments_: readonly string[]): Aud
   return {
     fetch,
     json,
-    roots: roots.length === 0 ? [join(homedir(), "Documents")] : [...new Set(roots)],
+    roots: roots.length === 0 ? defaultWorkspaceRoots(userHome) : [...new Set(roots)],
     sizes,
   };
 }
 
-function repositoriesUnder(root: string): string[] {
-  return readdirSync(root, { withFileTypes: true })
+export function repositoriesUnder(root: string): string[] {
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => join(root, entry.name))
-    .filter((path) => command(["git", "-C", path, "rev-parse", "--show-toplevel"]).exitCode === 0)
+    .filter((path) => existsSync(join(path, ".git")))
+    .filter((path) => {
+      const top = command(["git", "-C", path, "rev-parse", "--show-toplevel"]);
+      return top.exitCode === 0
+        && top.stdout !== ""
+        && canonicalIfPresent(top.stdout) === canonicalIfPresent(path);
+    })
     .filter((path) => {
       const remote = command(["git", "-C", path, "config", "--get", "remote.origin.url"]);
       return remote.exitCode === 0 && /(?:github\.com[:/])hraness\//u.test(remote.stdout);
