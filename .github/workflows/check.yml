@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15]
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ contains(fromJSON('["ubuntu-latest","ubuntu-24.04","ubuntu-slim"]'), matrix.os) && 'hraness-cf' || matrix.os }}
     timeout-minutes: 15
     steps:
       - name: Check out the governed revision only
@@ -41,7 +41,7 @@ jobs:
     name: Required
     if: always()
     needs: [check]
-    runs-on: ubuntu-24.04
+    runs-on: hraness-cf
     timeout-minutes: 5
     steps:
       - name: Require every platform check
