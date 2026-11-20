@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "https://github.com/hraness/skillpack",
+  "sourceCommit": "918fb84d8f75d971cdb99cf6d67e17b3983d1582",
+  "sourcePath": "plugins/skillpack-admin/skills/skillpack-admin/scripts/support.mjs",
+  "sourceSha256": "b4a9ec815c41bfa6690641a4af20a4557f8a5062927bb02255cbac2d3e95289b",
+  "upstreamCommit": "ed89e584c2c420e3e0547bbe8f32baf8e3a2ae4d",
+  "license": "MIT",
+  "derivation": "The foundation section of the already-public helper, with its existing runSupportCommand exported. No private source or new implementation is included.",
+  "moduleSha256": "3ffb99158cfabc43b20564e4989053f8bed06e2bc8903c12aa1b91b1de6fe0bd"
+}

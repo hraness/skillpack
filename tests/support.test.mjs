@@ -50,18 +50,17 @@ test("copied helper executes through a Node symlink and stays quiet when importe
     expect(readdirSync(f.root).sort()).toEqual(["copied skill", "support-alias.mjs"]);
   } finally { f.close(); }
 });
-test("build rejects changed dependency exports before bundling", () => {
+test("build rejects changed public support code before bundling", () => {
   const f = fixture(), repository = resolve(import.meta.dir, "..");
   try {
     mkdirSync(join(f.root, "scripts"));
     copyFileSync(join(repository, "scripts/build-support.mjs"), join(f.root, "scripts/build-support.mjs"));
     copyFileSync(join(repository, "package.json"), join(f.root, "package.json"));
-    const dependency = join(f.root, "node_modules/@hraness/support-foundation"); mkdirSync(dependency, { recursive: true });
-    const manifest = JSON.parse(readFileSync(join(repository, "node_modules/@hraness/support-foundation/package.json"), "utf8"));
-    manifest.exports["./node"].import = "./unreviewed.mjs";
-    writeFileSync(join(dependency, "package.json"), JSON.stringify(manifest));
+    const vendor = join(f.root, "scripts/vendor"); mkdirSync(vendor, { recursive: true });
+    copyFileSync(join(repository, "scripts/vendor/support-node.provenance.json"), join(vendor, "support-node.provenance.json"));
+    writeFileSync(join(vendor, "support-node.mjs"), readFileSync(join(repository, "scripts/vendor/support-node.mjs"), "utf8") + "\n// unreviewed change\n");
     const result = spawnSync(process.execPath, [join(f.root, "scripts/build-support.mjs"), "--check"], { cwd: f.root, env: f.env, encoding: "utf8", timeout: 5000 });
-    expect(result.status).not.toBe(0); expect(result.stderr).toContain("Reviewed foundation input package.json"); expect(result.stdout).toBe("");
+    expect(result.status).not.toBe(0); expect(result.stderr).toContain("Reviewed public support input scripts/vendor/support-node.mjs"); expect(result.stdout).toBe("");
   } finally { f.close(); }
 });
 test("claims support release, acknowledged cooldown and suite decline without email lookup", () => {

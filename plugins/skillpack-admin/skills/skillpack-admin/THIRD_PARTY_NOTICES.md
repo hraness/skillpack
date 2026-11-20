@@ -2,8 +2,10 @@
 
 The optional support helper bundles `@hraness/support-foundation` 0.4.1 from
 https://github.com/hraness/support-foundation at reviewed commit
-`ed89e584c2c420e3e0547bbe8f32baf8e3a2ae4d`. It is built from the exact declared
-dev dependency; no install is needed when using this copied skill.
+`ed89e584c2c420e3e0547bbe8f32baf8e3a2ae4d`. Its build input is reconstructed solely from the helper already published in
+this repository at commit `918fb84d8f75d971cdb99cf6d67e17b3983d1582`, with the source digest
+recorded in `scripts/vendor/support-node.provenance.json`. No private dependency
+or install is needed to build or use this copied skill.
 
 MIT License
 
