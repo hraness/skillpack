@@ -182,7 +182,10 @@ only when sccache is already installed. Repository test configs should read
 
 For non-interactive macOS and Linux runs, the wrapper supervises a dedicated
 child process group and forwards `HUP`, `INT`, `QUIT`, and `TERM` to the whole
-group. An interactive TTY preserves its controlling terminal and receives
+group. When the command exits, the wrapper also stops any process that left
+the group (such as a daemon started with `setsid`) but still has this run's
+scheduler lock file open, so the slot frees up as soon as host-run returns. It
+matches the exact file, never a process name. An interactive TTY preserves its controlling terminal and receives
 best-effort leader signaling so an intentional 2FA prompt still works. Do not
 detach a background server from scheduler custody.
 

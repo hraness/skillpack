@@ -1,13 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import {
   chmodSync,
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,7 +26,9 @@ import {
   holdTimeoutExitCode,
   hostStatusReport,
   jobEnvironment,
+  leaseDescriptorIdentities,
   parseDuration,
+  parseLsofDescriptorHolders,
   parseHostRunCli,
   queueTimeoutExitCode,
   queueTimeoutMilliseconds,
@@ -39,6 +44,7 @@ import {
   permissionBoundaryDenied,
   permitCapacity,
   permitsForMode,
+  processGroupId,
   processStartIdentity,
   pruneStaleHolders,
   resolveAtetHostResourceModule,
@@ -630,6 +636,232 @@ describe("host-wide resource wrapper", () => {
       rmSync(root, { force: true, recursive: true });
     }
   });
+
+  test("matches lease holders by exact device and inode, never by shared devices", () => {
+    const root = mkdtempSync(join(tmpdir(), "le-lease-identity-"));
+    try {
+      const lockPath = join(root, "lease.lock");
+      writeFileSync(lockPath, "");
+      const lock = openSync(lockPath, "r");
+      const nullDevice = openSync("/dev/null", "r");
+      try {
+        const identities = leaseDescriptorIdentities([nullDevice, lock, lock]);
+        const stats = statSync(lockPath, { bigint: true });
+        expect(identities).toEqual([{ dev: stats.dev, ino: stats.ino }]);
+        const dev = `0x${stats.dev.toString(16)}`;
+        const output = [
+          "p101", "fcwd", `D${dev}`, `i${stats.ino}`,
+          "p202", "f3", `D${dev}`, `i${stats.ino + 1n}`, "f4", "D0x1", `i${stats.ino}`,
+          "p303", "f0", "D0x93bbeffe", "i336", "f9", `D${dev}`, `i${stats.ino}`,
+          "pnot-a-pid", "f3", `D${dev}`, `i${stats.ino}`,
+          "",
+        ].join("\n");
+        expect(parseLsofDescriptorHolders(output, identities).sort()).toEqual([101, 303]);
+        expect(parseLsofDescriptorHolders(output, [])).toEqual([]);
+      } finally {
+        closeSync(lock);
+        closeSync(nullDevice);
+      }
+      if (process.platform === "darwin" || process.platform === "linux") {
+        expect(processGroupId(process.pid)).toBeGreaterThan(0);
+      }
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  const detachedLeaseHolderCases = [
+    {
+      description: "compute lease, holder ignores TERM",
+      descriptors: [3],
+      ignoresTerm: true,
+      lane: "compute",
+      spawnsBrowserChild: false,
+    },
+    {
+      description: "browser capability and CPU leases, holder leads a process group with a child",
+      descriptors: [3, 4],
+      ignoresTerm: false,
+      lane: "browser",
+      spawnsBrowserChild: true,
+    },
+  ] as const;
+
+  for (const scenario of detachedLeaseHolderCases) {
+    test(`reaps a detached daemon that inherited the lease descriptor (${scenario.description})`, async () => {
+      if (process.platform !== "darwin" && process.platform !== "linux") return;
+      const root = realpathSync(mkdtempSync(join(tmpdir(), "le-detached-lease-holder-")));
+      const modulePath = join(root, "host-resources.js");
+      const leaseRoot = join(root, "leases");
+      const pidLog = join(root, "pids.log");
+      const ready = join(root, "ready");
+      // Models the real coordinator: one lock file per lease, held with an
+      // exclusive flock; admission waits while another lease file is still
+      // locked by any open file description.
+      writeFileSync(modulePath, `
+        import { dlopen, FFIType } from "bun:ffi";
+        import { closeSync, mkdirSync, openSync, readdirSync, unlinkSync } from "node:fs";
+        import { join } from "node:path";
+        const libc = dlopen(
+          process.platform === "darwin" ? "/usr/lib/libSystem.B.dylib" : "libc.so.6",
+          { flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 } },
+        );
+        const lockExclusiveNonblocking = 2 | 4;
+        const leaseRoot = ${JSON.stringify(leaseRoot)};
+        let counter = 0;
+        export function createHostResourceCoordinator(options) {
+          const directory = join(leaseRoot, options.profile.id.replaceAll("/", "_"));
+          mkdirSync(directory, { recursive: true });
+          return {
+            async withLease(_claims, callback) {
+              const name = "lease-" + process.pid + "-" + (counter += 1) + ".lock";
+              const path = join(directory, name);
+              const descriptor = openSync(path, "w+");
+              try {
+                if (libc.symbols.flock(descriptor, lockExclusiveNonblocking) !== 0) {
+                  throw new Error("could not lock the new lease file");
+                }
+                const deadline = Date.now() + 3_000;
+                for (;;) {
+                  const live = readdirSync(directory).filter((other) => {
+                    if (other === name) return false;
+                    const probe = openSync(join(directory, other), "r");
+                    try {
+                      if (libc.symbols.flock(probe, lockExclusiveNonblocking) !== 0) return true;
+                      unlinkSync(join(directory, other));
+                      return false;
+                    } finally {
+                      closeSync(probe);
+                    }
+                  });
+                  if (live.length === 0) break;
+                  if (Date.now() > deadline) throw new Error("lease still held: " + live.join(", "));
+                  await Bun.sleep(25);
+                }
+                return await callback({ inheritedFileDescriptor: descriptor });
+              } finally {
+                // Release like the real coordinator: close, then remove the
+                // marker only if no other open file description still locks it.
+                closeSync(descriptor);
+                const release = openSync(path, "r");
+                try {
+                  if (libc.symbols.flock(release, lockExclusiveNonblocking) === 0) unlinkSync(path);
+                } finally {
+                  closeSync(release);
+                }
+              }
+            },
+          };
+        }
+      `);
+      const descriptorStdio = JSON.stringify(["ignore", "ignore", "ignore", ...scenario.descriptors]);
+      const browserChildSource = `
+        const { appendFileSync } = await import("node:fs");
+        appendFileSync(${JSON.stringify(pidLog)}, process.pid + "\\n");
+        setInterval(() => {}, 1_000);
+      `;
+      const daemonSource = `
+        const { spawn } = await import("node:child_process");
+        const { appendFileSync, writeFileSync } = await import("node:fs");
+        ${scenario.ignoresTerm ? 'process.on("SIGTERM", () => {});' : ""}
+        appendFileSync(${JSON.stringify(pidLog)}, process.pid + "\\n");
+        ${scenario.spawnsBrowserChild
+          ? `spawn(process.execPath, ["-e", ${JSON.stringify(browserChildSource)}], { stdio: ${descriptorStdio} });
+             await Bun.sleep(300);`
+          : ""}
+        writeFileSync(${JSON.stringify(ready)}, "ready");
+        setInterval(() => {}, 1_000);
+      `;
+      const leaderSource = `
+        const { spawn } = await import("node:child_process");
+        const { existsSync } = await import("node:fs");
+        const daemon = spawn(process.execPath, ["-e", ${JSON.stringify(daemonSource)}], {
+          detached: true,
+          stdio: ${descriptorStdio},
+        });
+        daemon.unref();
+        for (let attempt = 0; attempt < 200 && !existsSync(${JSON.stringify(ready)}); attempt += 1) {
+          await Bun.sleep(10);
+        }
+        process.exit(0);
+      `;
+      const environment = { ...process.env };
+      delete environment.LOCAL_EFFICIENCY_LEASE;
+      const runEnvironment = {
+        ...environment,
+        ATET_HOST_RESOURCES_MODULE: modulePath,
+        LOCAL_EFFICIENCY_STATE_ROOT: join(root, "state", "host-resources-v1"),
+        LOCAL_EFFICIENCY_TELEMETRY: "off",
+      };
+      const hostRun = (arguments_: readonly string[]) => Bun.spawn({
+        cmd: [process.execPath, join(import.meta.dir, "host-run.ts"), ...arguments_],
+        cwd: root,
+        env: runEnvironment,
+        stderr: "pipe",
+        stdout: "pipe",
+      });
+      const recordedPids = (): number[] => existsSync(pidLog)
+        ? readFileSync(pidLog, "utf8").trim().split("\n").filter(Boolean).map(Number)
+        : [];
+      const alive = (pid: number): boolean => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      try {
+        const leased = hostRun([
+          "--mode=shared",
+          `--lane=${scenario.lane}`,
+          "--label=detached-lease-holder",
+          "--",
+          process.execPath,
+          "-e",
+          leaderSource,
+        ]);
+        const leasedExit = await leased.exited;
+        const leasedStderr = await new Response(leased.stderr).text();
+        expect(leasedExit, leasedStderr).toBe(0);
+        expect(existsSync(ready)).toBe(true);
+        const pids = recordedPids();
+        expect(pids.length).toBe(scenario.spawnsBrowserChild ? 2 : 1);
+
+        const followUps = [["--mode=exclusive", "--lane=compute"]];
+        if (scenario.lane !== "compute") followUps.push(["--mode=shared", `--lane=${scenario.lane}`]);
+        for (const followUp of followUps) {
+          const startedAt = performance.now();
+          const next = hostRun([
+            ...followUp,
+            "--label=after-detached-holder",
+            "--",
+            process.execPath,
+            "-e",
+            "process.exit(0)",
+          ]);
+          const nextExit = await next.exited;
+          const nextStderr = await new Response(next.stderr).text();
+          expect(nextExit, nextStderr).toBe(0);
+          expect(performance.now() - startedAt).toBeLessThan(2_500);
+        }
+
+        for (let attempt = 0; attempt < 50 && pids.some(alive); attempt += 1) await Bun.sleep(10);
+        expect(pids.filter(alive)).toEqual([]);
+        expect(leasedStderr).toContain("detached process(es) still holding this lease");
+        if (scenario.ignoresTerm) expect(leasedStderr).toContain("ignored TERM; sending KILL");
+      } finally {
+        for (const pid of recordedPids()) {
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch {
+            // Already reaped.
+          }
+        }
+        rmSync(root, { force: true, recursive: true });
+      }
+    }, 20_000);
+  }
 
   test("reports a stable reviewed-host-access boundary before child execution", () => {
     const root = mkdtempSync(join(tmpdir(), "le-host-access-boundary-"));

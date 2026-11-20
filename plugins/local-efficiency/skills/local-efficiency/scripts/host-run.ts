@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { dlopen, FFIType, ptr } from "bun:ffi";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   fstatSync,
@@ -465,6 +465,7 @@ function spawnCommand(
         ? "inherit"
         : ["inherit", "inherit", "inherit", ...inheritedLeaseDescriptors],
     });
+    const leaseIdentities = leaseDescriptorIdentities(inheritedLeaseDescriptors);
     let forcedCleanup: ReturnType<typeof setTimeout> | undefined;
     const signalChildTree = (signal: NodeJS.Signals): void => {
       if (child.pid === undefined) return;
@@ -550,6 +551,7 @@ function spawnCommand(
           }
           if (processGroupExists()) signalChildTree("SIGKILL");
         }
+        await reapEscapedLeaseHolders(leaseIdentities);
         resolveExit({
           exitCode: holdTimedOut
             ? holdTimeoutExitCode
@@ -559,6 +561,195 @@ function spawnCommand(
       })().catch(reject);
     });
   });
+}
+
+/** Exact identity of an open lease lock file. */
+export type DescriptorIdentity = { readonly dev: bigint; readonly ino: bigint };
+
+/**
+ * Records the device and inode of each lease descriptor that refers to a
+ * regular file. Lease locks are regular files unique to one lease; anything
+ * else (a shared device such as /dev/null) is never used to find holders.
+ */
+export function leaseDescriptorIdentities(descriptors: readonly number[]): DescriptorIdentity[] {
+  const identities: DescriptorIdentity[] = [];
+  for (const descriptor of descriptors) {
+    try {
+      const stats = fstatSync(descriptor, { bigint: true });
+      if (!stats.isFile()) continue;
+      if (identities.some((known) => known.dev === stats.dev && known.ino === stats.ino)) continue;
+      identities.push({ dev: stats.dev, ino: stats.ino });
+    } catch {
+      // A descriptor that cannot be inspected has no identity to protect.
+    }
+  }
+  return identities;
+}
+
+function identityMatches(
+  identities: readonly DescriptorIdentity[],
+  dev: bigint,
+  ino: bigint,
+): boolean {
+  return identities.some((identity) => identity.dev === dev && identity.ino === ino);
+}
+
+function parsedBigInt(value: string): bigint | null {
+  if (!/^(?:0x[0-9a-f]+|[0-9]+)$/iu.test(value)) return null;
+  try {
+    return BigInt(value);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parses `lsof -F pDi` output and returns the processes with an open file
+ * whose device and inode match one of `identities` exactly.
+ */
+export function parseLsofDescriptorHolders(
+  output: string,
+  identities: readonly DescriptorIdentity[],
+): number[] {
+  const holders = new Set<number>();
+  let pid: number | null = null;
+  let dev: bigint | null = null;
+  let ino: bigint | null = null;
+  for (const line of output.split("\n")) {
+    const field = line.slice(0, 1);
+    const value = line.slice(1);
+    if (field === "p") {
+      const parsed = Number(value);
+      pid = /^[1-9][0-9]*$/u.test(value) && Number.isSafeInteger(parsed) ? parsed : null;
+      dev = null;
+      ino = null;
+    } else if (field === "f") {
+      dev = null;
+      ino = null;
+    } else if (field === "D") {
+      dev = parsedBigInt(value);
+    } else if (field === "i") {
+      ino = parsedBigInt(value);
+    }
+    if (pid !== null && dev !== null && ino !== null && identityMatches(identities, dev, ino)) {
+      holders.add(pid);
+    }
+  }
+  return [...holders];
+}
+
+function linuxDescriptorHolders(identities: readonly DescriptorIdentity[], uid: number): number[] {
+  const holders: number[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync("/proc");
+  } catch {
+    return holders;
+  }
+  for (const entry of entries) {
+    if (!/^[1-9][0-9]*$/u.test(entry)) continue;
+    const pid = Number(entry);
+    try {
+      if (statSync(`/proc/${entry}`).uid !== uid) continue;
+      for (const descriptor of readdirSync(`/proc/${entry}/fd`)) {
+        try {
+          const stats = statSync(`/proc/${entry}/fd/${descriptor}`, { bigint: true });
+          if (identityMatches(identities, stats.dev, stats.ino)) {
+            holders.push(pid);
+            break;
+          }
+        } catch {
+          // The descriptor closed while it was being read.
+        }
+      }
+    } catch {
+      // The process exited or its descriptors are not readable.
+    }
+  }
+  return holders;
+}
+
+function darwinDescriptorHolders(identities: readonly DescriptorIdentity[], uid: number): number[] {
+  const result = spawnSync("/usr/sbin/lsof", ["-n", "-P", "-w", "-F", "pDi", "-u", String(uid)], {
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 15_000,
+  });
+  if (typeof result.stdout !== "string") return [];
+  return parseLsofDescriptorHolders(result.stdout, identities);
+}
+
+/** Other same-user processes that still hold one of these exact files open. */
+function leaseDescriptorHolders(identities: readonly DescriptorIdentity[]): number[] {
+  if (identities.length === 0 || typeof process.getuid !== "function") return [];
+  const uid = process.getuid();
+  const holders = process.platform === "linux"
+    ? linuxDescriptorHolders(identities, uid)
+    : process.platform === "darwin"
+      ? darwinDescriptorHolders(identities, uid)
+      : [];
+  return holders.filter((pid) => pid !== process.pid);
+}
+
+function signalProcess(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(pid, signal);
+  } catch {
+    // The process already exited.
+  }
+}
+
+const escapedHolderConfirmMilliseconds = 100;
+const escapedHolderTermMilliseconds = 500;
+
+/**
+ * Stops processes that escaped the leased command's process group (for example
+ * a daemon started with setsid) but still hold this lease's lock file open,
+ * which would keep the lease held after host-run exits. Only processes holding
+ * the exact device and inode of this lease, seen in two scans, are signaled.
+ */
+async function reapEscapedLeaseHolders(identities: readonly DescriptorIdentity[]): Promise<void> {
+  if (identities.length === 0) return;
+  const first = leaseDescriptorHolders(identities);
+  if (first.length === 0) return;
+  // A coordinator probing lock files opens them only for an instant; a
+  // detached process that inherited the lease keeps it open across scans.
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, escapedHolderConfirmMilliseconds));
+  const second = new Set(leaseDescriptorHolders(identities));
+  const holders = first
+    .filter((pid) => second.has(pid))
+    .map((pid) => ({ pid, start: processStartIdentity(pid)?.token ?? null }));
+  if (holders.length === 0) return;
+  const unchanged = (holder: { readonly pid: number; readonly start: string | null }): boolean =>
+    processAlive(holder.pid)
+    && (holder.start === null || processStartIdentity(holder.pid)?.token === holder.start);
+  console.error(
+    `[host-run] stopping ${holders.length} detached process(es) still holding this lease after the command exited`
+    + ` (pid ${holders.map((holder) => holder.pid).join(", ")})`,
+  );
+  for (const holder of holders) {
+    if (!unchanged(holder)) continue;
+    if (processGroupId(holder.pid) === holder.pid) signalProcess(-holder.pid, "SIGTERM");
+    signalProcess(holder.pid, "SIGTERM");
+  }
+  const deadline = performance.now() + escapedHolderTermMilliseconds;
+  while (performance.now() < deadline && holders.some((holder) => processAlive(holder.pid))) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
+  }
+  if (!holders.some((holder) => processAlive(holder.pid))) return;
+  const stillHolding = new Set(leaseDescriptorHolders(identities));
+  const survivors = holders.filter((holder) => stillHolding.has(holder.pid) && unchanged(holder));
+  if (survivors.length === 0) return;
+  console.error(
+    `[host-run] ${survivors.length} detached process(es) ignored TERM; sending KILL`
+    + ` (pid ${survivors.map((holder) => holder.pid).join(", ")})`,
+  );
+  for (const survivor of survivors) signalProcess(survivor.pid, "SIGKILL");
+  const killDeadline = performance.now() + escapedHolderTermMilliseconds;
+  while (performance.now() < killDeadline && survivors.some((holder) => processAlive(holder.pid))) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
+  }
 }
 
 type InheritedLease = {
@@ -837,6 +1028,7 @@ const holderFilePattern = /^([1-9][0-9]*)-[0-9a-f]{8,64}\.json$/u;
 const legacySkewToleranceMilliseconds = 60_000;
 const darwinProcPidTbsdInfo = 3;
 const darwinProcBsdInfoSize = 136;
+const darwinProcBsdInfoPgidOffset = 100;
 
 let darwinProcPidInfoSymbol: ((
   pid: number,
@@ -874,15 +1066,47 @@ function linuxBootId(): string {
   return cachedLinuxBootId;
 }
 
+function darwinBsdInfo(pid: number): Buffer | null {
+  const fn = darwinProcPidInfo();
+  if (fn === null) return null;
+  try {
+    const buffer = Buffer.alloc(darwinProcBsdInfoSize);
+    const written = fn(pid, darwinProcPidTbsdInfo, 0n, ptr(buffer), darwinProcBsdInfoSize);
+    return written < darwinProcBsdInfoSize ? null : buffer;
+  } catch {
+    return null;
+  }
+}
+
+/** The process group of `pid`, or null when it cannot be read. */
+export function processGroupId(pid: number): number | null {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  if (process.platform === "darwin") {
+    const buffer = darwinBsdInfo(pid);
+    if (buffer === null) return null;
+    const pgid = buffer.readUInt32LE(darwinProcBsdInfoPgidOffset);
+    return pgid > 0 ? pgid : null;
+  }
+  if (process.platform === "linux") {
+    try {
+      const raw = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const closeParen = raw.lastIndexOf(") ");
+      if (closeParen < 0) return null;
+      const pgid = Number(raw.slice(closeParen + 2).trim().split(/\s+/u)[2]);
+      return Number.isSafeInteger(pgid) && pgid > 0 ? pgid : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export function processStartIdentity(pid: number): ProcessStartIdentity | null {
   if (!Number.isSafeInteger(pid) || pid <= 0) return null;
   if (process.platform === "darwin") {
-    const fn = darwinProcPidInfo();
-    if (fn === null) return null;
+    const buffer = darwinBsdInfo(pid);
+    if (buffer === null) return null;
     try {
-      const buffer = Buffer.alloc(darwinProcBsdInfoSize);
-      const written = fn(pid, darwinProcPidTbsdInfo, 0n, ptr(buffer), darwinProcBsdInfoSize);
-      if (written < darwinProcBsdInfoSize) return null;
       const seconds = buffer.readBigUInt64LE(120);
       const microseconds = buffer.readBigUInt64LE(128);
       if (seconds <= 0n) return null;
