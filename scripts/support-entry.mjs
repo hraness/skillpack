@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
-import { runSupportCommand } from "@hraness/support-foundation/node";
+import { runSupportCommand } from "./vendor/support-node.mjs";
 
 const profile = { id: "hraness", name: "Hraness", valueProposition: "Support continued work on these skills and their install tools.", updates: false };
 export async function main(args = process.argv.slice(2)) {

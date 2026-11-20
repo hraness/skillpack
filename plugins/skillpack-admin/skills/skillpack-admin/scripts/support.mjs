@@ -2,7 +2,7 @@
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 
-// node_modules/@hraness/support-foundation/dist/node.js
+// scripts/vendor/support-node.mjs
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
