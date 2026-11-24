@@ -26,6 +26,7 @@ Bootstrap links these into the configured Bun `bin` directory:
 | `local-efficiency` | Doctor: verify baseline, commands, and managed blocks |
 | `worktree-cleanup` | Reclaim verified clean merged worktrees by exact path |
 | `dev-server-reap` | Audit stale dev servers and orphaned browser sessions |
+| `orphan-runner-sweep` | List test runners left behind by finished tasks; `--apply` asks them to stop |
 | `hra-port` | Deterministic per-project port assignment |
 | `hra-disk-guard` | Local disk-pressure audit and bounded cleanup targets |
 | `hra-chrome` | Provisioned Chrome for Testing launcher for agent runs |
