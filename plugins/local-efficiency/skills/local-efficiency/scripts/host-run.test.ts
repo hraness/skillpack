@@ -48,16 +48,23 @@ import {
   resolveAtetRuntimeRoot,
   resolveCapabilityStateRoot,
   resolveHostResourceStateRoot,
+  resolveCpuStateRoot,
+  legacyPermitCapacity,
   runHostCommand,
   type HostRunOptions,
 } from "./host-run";
 
 describe("host-wide resource wrapper", () => {
   test("uses the established 1/2/all weighted model", () => {
-    expect(permitCapacity(18)).toBe(4);
+    expect(permitCapacity(18)).toBe(6);
+    expect(permitCapacity(16)).toBe(6);
+    expect(permitCapacity(14)).toBe(4);
+    expect(permitCapacity(12)).toBe(4);
+    expect(legacyPermitCapacity(18)).toBe(4);
     expect(permitsForMode("shared", 18)).toBe(1);
     expect(permitsForMode("heavy", 18)).toBe(2);
-    expect(permitsForMode("exclusive", 18)).toBe(4);
+    expect(permitsForMode("exclusive", 18)).toBe(6);
+    expect(permitsForMode("exclusive", 14)).toBe(4);
     expect(permitsForMode("exclusive", 2)).toBe(1);
   });
 
@@ -684,8 +691,18 @@ describe("host-wide resource wrapper", () => {
     }
   });
 
+  test("keeps the CPU pool for capacities up to 4 and gives larger pools their own state", () => {
+    const root = "/opt/tester/.local/state/local-efficiency/host-resources-v1";
+    expect(resolveCpuStateRoot(root, 4)).toBe(root);
+    expect(resolveCpuStateRoot(root, 2)).toBe(root);
+    expect(resolveCpuStateRoot(root, 6)).toBe("/opt/tester/.local/state/local-efficiency/host-resources-cpu6");
+    // Thread hints split the cores across permits instead of oversubscribing them.
+    expect(jobEnvironment(1, 6, {}, 18).HRA_JOBS).toBe("3");
+    expect(jobEnvironment(6, 6, {}, 18).HRA_JOBS).toBe("18");
+  });
+
   test("caps exclusive on capability lanes at two CPU permits", () => {
-    expect(permitsForMode("exclusive", 16, "compute")).toBe(4);
+    expect(permitsForMode("exclusive", 16, "compute")).toBe(6);
     expect(permitsForMode("exclusive", 16, "browser")).toBe(2);
     expect(permitsForMode("exclusive", 16, "browser-auth")).toBe(2);
     expect(permitsForMode("exclusive", 16, "mac-native")).toBe(2);
@@ -1326,8 +1343,8 @@ describe("host-wide resource wrapper", () => {
         stateRoot,
       });
       expect(report).toMatchObject({
-        availablePermits: 2,
-        capacity: 4,
+        availablePermits: 4,
+        capacity: 6,
         hostParallelism: 16,
         note: "partial-holder-census-not-admission-authority",
         profileId: "local-efficiency/capabilities-v2",
@@ -1342,7 +1359,7 @@ describe("host-wide resource wrapper", () => {
         pid: 101,
       });
       const text = formatHostStatus(report);
-      expect(text).toContain("CAPACITY\tcpu=2/4\tavailable=2\tcores=16");
+      expect(text).toContain("CAPACITY\tcpu=2/6\tavailable=4\tcores=16");
       expect(text).toContain("HOLDER\tpid=101\tlane=compute\tmode=heavy\tpermits=2\theld=1m35s\tlabel=repo-check");
 
       const helpResult = Bun.spawnSync({

@@ -202,7 +202,18 @@ function validateFullCpu(mode: ResourceMode, lane: CapabilityLane, fullCpu: unkn
   }
 }
 
+/**
+ * Weighted CPU permits for this host. Hosts with 16+ cores get 6 permits; job
+ * thread hints (HRA_JOBS etc.) scale down per permit, so the total thread
+ * budget stays at the core count while more jobs overlap.
+ */
 export function permitCapacity(hostParallelism = availableParallelism()): number {
+  if (hostParallelism >= 16) return 6;
+  return legacyPermitCapacity(hostParallelism);
+}
+
+/** The pre-0.5.4 capacity, still honoured for leases inherited from an older outer wrapper. */
+export function legacyPermitCapacity(hostParallelism = availableParallelism()): number {
   if (hostParallelism >= 12) return 4;
   if (hostParallelism >= 6) return 3;
   if (hostParallelism >= 3) return 2;
@@ -398,6 +409,16 @@ export function resolveCapabilityStateRoot(hostResourceStateRoot: string): strin
 
 export function resolveMacNativeStateRoot(hostResourceStateRoot: string): string {
   return join(resolve(hostResourceStateRoot, ".."), "mac-native-v1");
+}
+
+/**
+ * The Atet coordinator pins one profile per state directory, so a CPU pool of
+ * a new size gets its own directory; capacities up to 4 keep the original one.
+ */
+export function resolveCpuStateRoot(hostResourceStateRoot: string, capacity: number): string {
+  return capacity <= 4
+    ? hostResourceStateRoot
+    : join(resolve(hostResourceStateRoot, ".."), `host-resources-cpu${capacity}`);
 }
 
 export function resolveHolderRoot(hostResourceStateRoot: string): string {
@@ -607,7 +628,7 @@ function parsedLeaseMode(value: unknown): ResourceMode | null {
 }
 
 function parsedLeaseCapacity(value: unknown): number | null {
-  return Number.isSafeInteger(value) && Number(value) >= 1 && Number(value) <= 4
+  return Number.isSafeInteger(value) && Number(value) >= 1 && Number(value) <= 6
     ? Number(value)
     : null;
 }
@@ -780,7 +801,7 @@ function assertMarkerCoverage(descriptor: number, accepted: readonly MarkerCover
 }
 
 function assertInheritedLeaseDescriptors(inherited: InheritedLease): void {
-  if (inherited.capacity !== permitCapacity()) {
+  if (inherited.capacity !== permitCapacity() && inherited.capacity !== legacyPermitCapacity()) {
     throw new Error("inherited local-efficiency lease capacity changed");
   }
   let descriptor = 3;
@@ -1243,7 +1264,7 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
         id: `local-efficiency/v1-${capacity}`,
         capacities: [{ resource: "cpu", limit: capacity }],
       },
-      stateRoot,
+      stateRoot: resolveCpuStateRoot(stateRoot, capacity),
       waitTimeoutMilliseconds: queueTimeoutMilliseconds,
     });
     const laneProfile = options.lane === "mac-native" ? macNativeProfile : capabilityProfile;
