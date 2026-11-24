@@ -69,6 +69,29 @@ export const legacyCapabilityProfile = Object.freeze({
   ]),
 });
 
+/**
+ * The mac-native lane runs from its own pool so two shared or heavy native
+ * jobs (simulator tests, journeys, Swift builds) can overlap; `exclusive`
+ * claims both slots. The capabilities-v2 profile keeps its mac-native entry so
+ * its digest, and the browser-auth custody it guards, are unchanged; new
+ * wrappers simply stop claiming mac-native there.
+ */
+export const macNativeProfile = Object.freeze({
+  id: "local-efficiency/mac-native-v1",
+  capacities: Object.freeze([
+    Object.freeze({ resource: "mac-native", limit: 2 }),
+  ]),
+});
+
+/** Slots a mac-native run claims: exclusive takes the whole lane. */
+export function macNativeClaimAmount(mode: ResourceMode): number {
+  return mode === "exclusive" ? macNativeProfile.capacities[0]!.limit : 1;
+}
+
+function capabilityClaimAmount(lane: CapabilityLane, mode: ResourceMode): number {
+  return lane === "mac-native" ? macNativeClaimAmount(mode) : 1;
+}
+
 /** Total queue wait (capability + CPU) before host-run gives up. */
 export const queueTimeoutMilliseconds = 2 * 60 * 60_000;
 export const queueTimeoutExitCode = 75;
@@ -371,6 +394,10 @@ export function resolveHostResourceStateRoot(
 
 export function resolveCapabilityStateRoot(hostResourceStateRoot: string): string {
   return join(resolve(hostResourceStateRoot, ".."), "capabilities-v2");
+}
+
+export function resolveMacNativeStateRoot(hostResourceStateRoot: string): string {
+  return join(resolve(hostResourceStateRoot, ".."), "mac-native-v1");
 }
 
 export function resolveHolderRoot(hostResourceStateRoot: string): string {
@@ -731,16 +758,25 @@ function expectedProfileDigest(profile: {
   return sha256(JSON.stringify(profile));
 }
 
+type MarkerCoverage = {
+  readonly profileDigests: readonly string[];
+  readonly claims: readonly { readonly amount: number; readonly resource: string }[];
+};
+
 function assertMarker(
   descriptor: number,
   profileDigests: readonly string[],
   claims: readonly { readonly amount: number; readonly resource: string }[],
 ): void {
+  assertMarkerCoverage(descriptor, [{ profileDigests, claims }]);
+}
+
+function assertMarkerCoverage(descriptor: number, accepted: readonly MarkerCoverage[]): void {
   const marker = inheritedMarker(descriptor);
-  if (
-    !profileDigests.includes(marker.profileSha256)
-    || JSON.stringify(marker.claims) !== JSON.stringify(claims)
-  ) throw new Error("inherited local-efficiency lease descriptor does not cover this request");
+  const covered = accepted.some((entry) =>
+    entry.profileDigests.includes(marker.profileSha256)
+    && JSON.stringify(marker.claims) === JSON.stringify(entry.claims));
+  if (!covered) throw new Error("inherited local-efficiency lease descriptor does not cover this request");
 }
 
 function assertInheritedLeaseDescriptors(inherited: InheritedLease): void {
@@ -748,7 +784,20 @@ function assertInheritedLeaseDescriptors(inherited: InheritedLease): void {
     throw new Error("inherited local-efficiency lease capacity changed");
   }
   let descriptor = 3;
-  if (inherited.lane !== "compute") {
+  if (inherited.lane === "mac-native") {
+    assertMarkerCoverage(descriptor, [
+      {
+        profileDigests: [expectedProfileDigest(macNativeProfile)],
+        claims: [{ resource: "mac-native", amount: macNativeClaimAmount(inherited.mode) }],
+      },
+      {
+        // An outer wrapper from before mac-native-v1 claimed one slot in the shared profile.
+        profileDigests: [expectedProfileDigest(capabilityProfile), expectedProfileDigest(legacyCapabilityProfile)],
+        claims: [{ resource: "mac-native", amount: 1 }],
+      },
+    ]);
+    descriptor += 1;
+  } else if (inherited.lane !== "compute") {
     assertMarker(
       descriptor,
       inherited.lane === "browser"
@@ -1197,14 +1246,17 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
       stateRoot,
       waitTimeoutMilliseconds: queueTimeoutMilliseconds,
     });
+    const laneProfile = options.lane === "mac-native" ? macNativeProfile : capabilityProfile;
     const capabilityCoordinator = options.lane === "compute"
       ? null
       : module.createHostResourceCoordinator({
         profile: {
-          id: capabilityProfile.id,
-          capacities: capabilityProfile.capacities.map((entry) => ({ ...entry })),
+          id: laneProfile.id,
+          capacities: laneProfile.capacities.map((entry) => ({ ...entry })),
         },
-        stateRoot: resolveCapabilityStateRoot(stateRoot),
+        stateRoot: options.lane === "mac-native"
+          ? resolveMacNativeStateRoot(stateRoot)
+          : resolveCapabilityStateRoot(stateRoot),
         waitTimeoutMilliseconds: queueTimeoutMilliseconds,
       });
     if (cancellationState.signal !== null) return signalExitCode(cancellationState.signal);
@@ -1268,7 +1320,7 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
     };
     if (capabilityCoordinator === null) return await runWithCpu([]);
     return await capabilityCoordinator.withLease(
-      [{ resource: options.lane, amount: 1 }],
+      [{ resource: options.lane, amount: capabilityClaimAmount(options.lane, options.mode) }],
       (lease) => runWithCpu([lease.inheritedFileDescriptor]),
       {
         signal: cancellation.signal,
@@ -1392,6 +1444,7 @@ export function hostStatusReport(options: {
   const laneLimits = new Map<CapabilityLane, number | null>([
     ["compute", null],
     ...capabilityProfile.capacities.map((entry) => [entry.resource as CapabilityLane, entry.limit] as const),
+    ...macNativeProfile.capacities.map((entry) => [entry.resource as CapabilityLane, entry.limit] as const),
   ]);
   const lanes: HostStatusLaneSummary[] = capabilityLanes.map((resource) => ({
     activeCount: holders.filter((holder) => holder.lane === resource).length,

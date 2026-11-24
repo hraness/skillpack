@@ -151,7 +151,11 @@ package or command.
   Chrome that ignores TERM is reported, not SIGKILLed. Run it inside the
   `browser-auth` lane.
 - **Mac native:** Xcode, Simulator, Keychain, signed-app, or other macOS-only
-  work. Keep it on a Mac, assign one owner, and use the `mac-native` lane.
+  work. Keep it on a Mac and use the `mac-native` lane. The lane has two
+  slots: two `shared` or `heavy` native jobs (simulator tests, journeys,
+  Swift builds) run side by side, and `exclusive` takes both slots. Use
+  `exclusive` only for work that cannot overlap another native job, such as
+  signing or packaging that touches the Keychain or a fixed device.
 
 The browser, browser-auth and Mac lanes bound their scarce capability while
 still sharing the weighted compute capacity; on those lanes `exclusive` means
@@ -159,7 +163,7 @@ exclusive use of the capability and takes at most 2 CPU permits by default.
 For macOS-only work that needs all CPU capacity, opt in with
 `--mode=exclusive --lane=mac-native --full-cpu`. The bare `--full-cpu` flag is
 valid only with that mode and lane; it reserves every CPU permit and the one
-Mac-native slot before starting the command. Other modes and lanes reject it.
+both Mac-native slots before starting the command. Other modes and lanes reject it.
 A nested wrapper must be covered by the outer lane (a `browser-auth` owner may
 also run `browser` work) and CPU reservation. A two-permit native owner cannot
 escalate to full CPU on a machine with more than two permits; a full-capacity
