@@ -1062,6 +1062,7 @@ describe("host-wide resource wrapper", () => {
   });
 
   test("claims one mac-native slot for shared work", () => {
+    if (process.platform !== "darwin") return;
     const root = mkdtempSync(join(tmpdir(), "le-mac-native-shared-"));
     try {
       const log = join(root, "claims.log");
@@ -1086,6 +1087,7 @@ describe("host-wide resource wrapper", () => {
   });
 
   test("accepts nested mac-native work under an outer wrapper from before the mac-native pool", () => {
+    if (process.platform !== "darwin") return;
     const root = mkdtempSync(join(tmpdir(), "le-mac-native-legacy-"));
     try {
       const modulePath = join(root, "host-resources.js");
