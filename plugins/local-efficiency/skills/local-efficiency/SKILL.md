@@ -130,6 +130,14 @@ package or command.
   `${PORT:-$(hra-port NAME)}` bound to 127.0.0.1 with a trap that stops it when
   the command ends, and wrap only each local validation step of a drain loop,
   never the wait. `dev-server-reap` reports servers left behind.
+- **Orphaned test runners:** `orphan-runner-sweep` lists node and bun test
+  runners (`node --test`, `*.test.*` files, `bun test`, vitest, jest) that
+  outlived their task: reparented to PID 1, older than 2 h (`--min-age`), and
+  outside any live host-run lease or agent process tree. It changes nothing
+  by default. `--apply` rechecks each process's start time and command, sends
+  SIGTERM only, waits (`--grace`, default 10 s), and lists any that kept
+  running. It never sends SIGKILL; check survivors yourself before stopping
+  them.
 - **Chrome:** never launch the installed, auto-updating Google Chrome from a
   shell or test. Use Chrome for Testing or the project's pinned Playwright
   Chromium with a temporary profile. Agent-browser inside host-run launches
