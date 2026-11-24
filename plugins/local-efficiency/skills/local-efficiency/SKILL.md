@@ -100,6 +100,9 @@ package or command.
   authenticated-browser, fixed-port, native-device, credential, and
   private-data work on the documented local lanes; and honor any repository
   rule that requires a local gate before pushing.
+- After a scheduled check fails, rerun only the failing test, file, or package
+  until it passes, then run the broad check once. Rerunning a full suite for
+  each fix sends the same long job back through the queue every time.
 - The host scheduler is an outer layer. Jungle and other repositories keep their own
   schedulers underneath it; invoke `host-run` only around top-level
   commands. Nested `host-run` calls inherit the outer lease and do not
@@ -162,7 +165,7 @@ still sharing the weighted compute capacity; on those lanes `exclusive` means
 exclusive use of the capability and takes at most 2 CPU permits by default.
 For macOS-only work that needs all CPU capacity, opt in with
 `--mode=exclusive --lane=mac-native --full-cpu`. The bare `--full-cpu` flag is
-valid only with that mode and lane; it reserves every CPU permit and the one
+valid only with that mode and lane; it reserves every CPU permit and
 both Mac-native slots before starting the command. Other modes and lanes reject it.
 A nested wrapper must be covered by the outer lane (a `browser-auth` owner may
 also run `browser` work) and CPU reservation. A two-permit native owner cannot
@@ -177,6 +180,9 @@ command only, and records outcome `hold-timeout` (exit 124). Pass
 `--max-hold=90m` (or `none`) with a reason when a run genuinely needs longer.
 A queued claim gives up after 2 h (exit 75, `QUEUE_TIMEOUT`); while it waits,
 host-run prints each holder's label, pid, and age every minute.
+
+CPU capacity is weighted permits: 6 on hosts with 16 or more cores, 4 on 12–15,
+3 on 6–11, 2 on 3–5, 1 below that.
 
 Inside a lease host-run sets `HRA_JOBS`, `CARGO_BUILD_JOBS`,
 `NEXTEST_TEST_THREADS`, `RAYON_NUM_THREADS`, and `MAKEFLAGS=-jN` to
