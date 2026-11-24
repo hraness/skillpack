@@ -16,6 +16,9 @@ import { join } from "node:path";
 import {
   capabilityPlatformSupported,
   capabilityProfile,
+  macNativeClaimAmount,
+  macNativeProfile,
+  resolveMacNativeStateRoot,
   chromeEnvironment,
   defaultMaxHoldMilliseconds,
   describeHolders,
@@ -691,6 +694,15 @@ describe("host-wide resource wrapper", () => {
     expect(permitsForMode("exclusive", 2, "browser")).toBe(1);
   });
 
+  test("runs mac-native from its own two-slot pool; exclusive claims the whole lane", () => {
+    expect(macNativeProfile).toEqual({ id: "local-efficiency/mac-native-v1", capacities: [{ resource: "mac-native", limit: 2 }] });
+    expect(macNativeClaimAmount("shared")).toBe(1);
+    expect(macNativeClaimAmount("heavy")).toBe(1);
+    expect(macNativeClaimAmount("exclusive")).toBe(2);
+    expect(resolveMacNativeStateRoot("/opt/tester/.local/state/local-efficiency/host-resources-v1"))
+      .toBe("/opt/tester/.local/state/local-efficiency/mac-native-v1");
+  });
+
   test("defines capabilities-v2 with a four-slot headless browser lane", () => {
     expect(capabilityProfile.id).toBe("local-efficiency/capabilities-v2");
     expect(capabilityProfile.capacities).toEqual([
@@ -1009,8 +1021,9 @@ describe("host-wide resource wrapper", () => {
         expect(existsSync(join(root, "cpu.lock"))).toBe(false);
         expect(existsSync(join(root, "mac-native.lock"))).toBe(false);
         const entries = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
-        expect(entries[0].profile).toEqual(capabilityProfile);
-        expect(entries[0].claims).toEqual([{ resource: "mac-native", amount: 1 }]);
+        expect(entries[0].profile).toEqual(macNativeProfile);
+        expect(entries[0].stateRoot).toBe(join(root, "state", "mac-native-v1"));
+        expect(entries[0].claims).toEqual([{ resource: "mac-native", amount: 2 }]);
         expect(entries[1].profile).toEqual({ id: `local-efficiency/v1-${permitCapacity()}`, capacities: [{ resource: "cpu", limit: permitCapacity() }] });
         expect(entries[1].claims).toEqual([{ resource: "cpu", amount: fullCpu ? permitCapacity() : Math.min(2, permitCapacity()) }]);
         rmSync(childMarker);
@@ -1043,6 +1056,76 @@ describe("host-wide resource wrapper", () => {
         if (!covered) expect(result.stderr.toString()).toContain("nested host-run cannot escalate");
         if (covered && !forged) rmSync(childMarker);
       }
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("claims one mac-native slot for shared work", () => {
+    if (process.platform !== "darwin") return;
+    const root = mkdtempSync(join(tmpdir(), "le-mac-native-shared-"));
+    try {
+      const log = join(root, "claims.log");
+      const childMarker = join(root, "child-ran");
+      const result = Bun.spawnSync({
+        cmd: [process.execPath, join(import.meta.dir, "host-run.ts"), "--mode=shared", "--lane=mac-native", "--label=sim", "--",
+          process.execPath, "-e", `await Bun.write(${JSON.stringify(childMarker)}, "ran")`],
+        cwd: root,
+        env: { ...cleanEnvironment(), ATET_HOST_RESOURCES_MODULE: passThroughModule(root, log),
+          LOCAL_EFFICIENCY_STATE_ROOT: join(root, "state", "host-resources-v1"), LOCAL_EFFICIENCY_TELEMETRY: "off" },
+        stderr: "pipe", stdout: "pipe",
+      });
+      expect(result.exitCode, result.stderr.toString()).toBe(0);
+      expect(existsSync(childMarker)).toBe(true);
+      const entries = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      expect(entries[0].profile.id).toBe("local-efficiency/mac-native-v1");
+      expect(entries[0].stateRoot).toBe(join(root, "state", "mac-native-v1"));
+      expect(entries[0].claims).toEqual([{ resource: "mac-native", amount: 1 }]);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("accepts nested mac-native work under an outer wrapper from before the mac-native pool", () => {
+    if (process.platform !== "darwin") return;
+    const root = mkdtempSync(join(tmpdir(), "le-mac-native-legacy-"));
+    try {
+      const modulePath = join(root, "host-resources.js");
+      const childMarker = join(root, "child-ran");
+      // The outer marker carries the capabilities-v2 digest, as a pre-pool host-run wrote it.
+      writeFileSync(modulePath, `
+        import { createHash } from "node:crypto";
+        import { closeSync, openSync, unlinkSync, writeFileSync } from "node:fs";
+        const legacy = ${JSON.stringify(capabilityProfile)};
+        let count = 0;
+        export function createHostResourceCoordinator(options) {
+          return { async withLease(claims, callback) {
+            const path = ${JSON.stringify(root)} + "/lock-" + (count++);
+            const profile = claims[0].resource === "mac-native" ? legacy : options.profile;
+            writeFileSync(path, JSON.stringify({
+              version: 1, owner: "a".repeat(32), ticket: "1", phase: "A",
+              claims: claims[0].resource === "mac-native" ? [{ resource: "mac-native", amount: 1 }] : claims,
+              profileSha256: createHash("sha256").update(JSON.stringify(profile)).digest("hex"),
+            }), { mode: 0o600 });
+            const descriptor = openSync(path, "r+");
+            try { return await callback({ inheritedFileDescriptor: descriptor }); }
+            finally { closeSync(descriptor); unlinkSync(path); }
+          } };
+        }
+      `);
+      const script = `
+        const { runHostCommand } = await import(${JSON.stringify(join(import.meta.dir, "host-run.ts"))});
+        process.exit(await runHostCommand({ lane: "mac-native", mode: "shared", command: [${JSON.stringify(process.execPath)}, "-e", ${JSON.stringify(`await Bun.write(${JSON.stringify(childMarker)}, "ran")`)}], cwd: ${JSON.stringify(root)}, label: "nested" }));
+      `;
+      const result = Bun.spawnSync({
+        cmd: [process.execPath, join(import.meta.dir, "host-run.ts"), "--mode=shared", "--lane=mac-native", "--", process.execPath, "-e", script],
+        cwd: root,
+        env: { ...cleanEnvironment(), ATET_HOST_RESOURCES_MODULE: modulePath,
+          LOCAL_EFFICIENCY_STATE_ROOT: join(root, "state", "host-resources-v1"), LOCAL_EFFICIENCY_TELEMETRY: "off" },
+        stderr: "pipe", stdout: "pipe",
+      });
+      expect(result.exitCode, result.stderr.toString()).toBe(0);
+      expect(existsSync(childMarker)).toBe(true);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
