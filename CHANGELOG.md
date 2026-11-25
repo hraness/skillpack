@@ -1,5 +1,21 @@
 # Changelog
 
+## local-efficiency 0.8.0 - 2026-11-25
+
+- A workstation can send heavy and exclusive compute runs to another Mac by
+  adding a `compute` entry to `~/.config/host-run/remote.json`. The remote
+  keeps a cached worktree per repository, reset to your commit and
+  uncommitted changes on each run, so later builds are incremental. Runs
+  there go through its own host-run and CI machine lock, at a lower priority.
+- If the run cannot start there (host down, not a Git repository, changed
+  submodules), it runs here and says why. A failure on the remote is final
+  and is not rerun here. `--local` keeps a heavy run on this Mac.
+- Only build settings such as `CARGO_*` and `RUSTFLAGS` travel with the
+  run; tokens, secrets and local paths stay here.
+- When the remote has no clone of the repository, forwarding (both
+  `mac-ui` and compute) sends a one-time copy into host-run's own state
+  there, never into `~/src`, capped at 2 GiB by default.
+
 ## local-efficiency 0.7.0 - 2026-11-25
 
 - `host-run mac-ui install-helper` builds a small `HostRun UI.app` on the Mac

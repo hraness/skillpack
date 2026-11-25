@@ -21,11 +21,15 @@ import {
   forwardUnavailableExitCode,
   newForwardId,
   normalizeOriginUrl,
+  originWithoutCredentials,
+  parseRemoteConfigs,
   parseRemoteForwardConfig,
   parseRemoteRepositoryList,
+  repositoryKey,
   planForward,
   remoteConfigPath,
   remoteHostRunArguments,
+  resolveRemoteConfigs,
   resolveRemoteForwardConfig,
   selectRemoteRepository,
   shellQuote,
@@ -49,8 +53,10 @@ describe("mac-ui forwarding config", () => {
       expect(resolveRemoteForwardConfig({ XDG_CONFIG_HOME: root })).toEqual({
         forwardTo: "hra2",
         remoteHostRun: "host-run",
+        seedMaxBytes: 2048 * 1_048_576,
         source: join(root, "host-run", "remote.json"),
       });
+      expect(resolveRemoteConfigs({ XDG_CONFIG_HOME: root }).compute).toBeNull();
       expect(resolveRemoteForwardConfig({ LOCAL_EFFICIENCY_REMOTE_CONFIG: join(root, "host-run", "remote.json") }))
         .toMatchObject({ forwardTo: "hra2" });
       // An explicit file must exist: the variable cannot switch forwarding off.
@@ -77,8 +83,42 @@ describe("mac-ui forwarding config", () => {
       { macUi: { forwardTo: "hra2", remoteHostRun: "relative/host-run" } },
       { macUi: { forwardTo: "hra2", remoteHostRun: "/a/../b" } },
       { macUi: "hra2" },
+      { macUi: { forwardTo: "hra2", seedMaxMiB: -1 } },
+      { macUi: { forwardTo: "hra2", modes: ["heavy"] } },
     ]) {
       expect(() => parseRemoteForwardConfig(JSON.stringify(bad))).toThrow();
+    }
+  });
+
+  test("parses the compute entry with heavy-only defaults, independent of macUi", () => {
+    const both = parseRemoteConfigs(JSON.stringify({
+      macUi: { forwardTo: "hra2" },
+      compute: { forwardTo: "hra2", modes: ["heavy", "exclusive"] },
+    }), "/cfg/remote.json");
+    expect(both.macUi).toMatchObject({ forwardTo: "hra2" });
+    expect(both.compute).toEqual({
+      cacheGiB: 80,
+      forwardTo: "hra2",
+      minFreeGiB: 60,
+      modes: ["heavy", "exclusive"],
+      remoteHostRun: "host-run",
+      seedMaxBytes: 2048 * 1_048_576,
+      slots: 2,
+      source: "/cfg/remote.json",
+    });
+    expect(parseRemoteConfigs(JSON.stringify({ compute: { forwardTo: "hra2", modes: ["exclusive"], slots: 3, cacheGiB: 10 } })))
+      .toMatchObject({ macUi: null, compute: { modes: ["exclusive"], slots: 3, cacheGiB: 10 } });
+    for (const bad of [
+      { compute: { forwardTo: "hra2", modes: ["shared"] } },
+      { compute: { forwardTo: "hra2", modes: [] } },
+      { compute: { forwardTo: "hra2", slots: 0 } },
+      { compute: { forwardTo: "hra2", slots: 9 } },
+      { compute: { forwardTo: "hra2", cacheGiB: 1.5 } },
+      { compute: { forwardTo: "hra2", lane: "compute" } },
+      { compute: { forwardTo: "hra2; rm" } },
+      { computer: { forwardTo: "hra2" } },
+    ]) {
+      expect(() => parseRemoteConfigs(JSON.stringify(bad))).toThrow();
     }
   });
 });
@@ -281,6 +321,8 @@ function fixture(options: { readonly remoteClone?: boolean; readonly config?: ob
     "host=$1; shift",
     "if [ -n \"${FAKE_SSH_FAIL:-}\" ]; then echo \"ssh: connect to host $host port 22: Connection refused\" >&2; exit 255; fi",
     "export HOME=\"$FAKE_REMOTE_HOME\"; unset XDG_CONFIG_HOME",
+    "# Real ssh does not carry the workstation's environment; drop what a test names.",
+    "for name in ${FAKE_SSH_DROP:-}; do unset \"$name\"; done",
     "exec /bin/sh -c \"$*\"",
     "",
   ].join("\n"));
@@ -393,9 +435,10 @@ describe("mac-ui forwarding end to end (fake ssh, direct launcher)", () => {
       expect(unreachable.status).toBe(forwardUnavailableExitCode);
       expect(unreachable.stderr).toContain("MAC_UI_FORWARD_FAILED: cannot reach fakehost over ssh");
       expect(unreachable.stderr).toContain("Connection refused");
+      writeFileSync(join(f.env.XDG_CONFIG_HOME!, "host-run", "remote.json"), JSON.stringify({ macUi: { forwardTo: "fakehost", seedMaxMiB: 0 } }));
       const missing = hostRun(f, f.local, command);
       expect(missing.status).toBe(forwardUnavailableExitCode);
-      expect(missing.stderr).toContain("fakehost has no clone of github.com/test/proj under ~/src");
+      expect(missing.stderr).toContain("fakehost has no clone of github.com/test/proj, and seeding is off");
       const notRepo = hostRun(f, f.root, command);
       expect(notRepo.status).toBe(forwardUnavailableExitCode);
       expect(notRepo.stderr).toContain("needs a Git repository");
@@ -513,4 +556,198 @@ describe("mac-ui forwarding through the HostRun UI helper", () => {
       rmSync(f.root, { force: true, recursive: true });
     }
   }, 120_000);
+});
+
+// ---- seeding and heavy compute forwarding (same fake ssh) ----
+
+describe("remote repository names and seeding", () => {
+  test("strips credentials from the seeded origin and derives a stable state directory name", () => {
+    expect(originWithoutCredentials("https://user:secret@github.com/o/r.git")).toBe("https://github.com/o/r.git");
+    expect(originWithoutCredentials("https://x-access-token@github.com/o/r")).toBe("https://github.com/o/r");
+    expect(originWithoutCredentials("git@github.com:o/r.git")).toBe("git@github.com:o/r.git");
+    expect(repositoryKey("git@github.com:Hraness/OH-Router.git")).toBe("github.com-hraness-oh-router");
+    expect(repositoryKey("https://github.com/hraness/oh-router")).toBe("github.com-hraness-oh-router");
+    expect(selectRemoteRepository(parseRemoteRepositoryList([
+      "seed\t/h/.local/state/host-run/seed/github.com-o-r\tgit@github.com:o/r.git",
+      "file\t/h/src/r-wt\tgit@github.com:o/r.git",
+    ].join("\n")), "git@github.com:o/r.git")?.path).toBe("/h/src/r-wt");
+    expect(selectRemoteRepository(parseRemoteRepositoryList(
+      "seed\t/h/.local/state/host-run/seed/github.com-o-r\tgit@github.com:o/r.git\n",
+    ), "https://github.com/o/r")?.kind).toBe("seed");
+  });
+
+  remoteMac("seeds a repository the remote lacks into host-run state, never ~/src, then sends only new commits", () => {
+    const f = fixture({ remoteClone: false });
+    try {
+      const first = hostRun(f, f.local, ["--lane=mac-ui", "--label=seeded", "--", "git", "rev-parse", "HEAD"]);
+      expect(first.status, first.stderr).toBe(0);
+      expect(first.stdout.trim()).toBe(sh(f.local, "git rev-parse HEAD"));
+      expect(first.stderr).toContain("fakehost has no clone of github.com/test/proj; sending a one-time copy");
+      expect(first.stderr).toMatch(/seeded fakehost with github\.com\/test\/proj in [\d.]+s/u);
+      const seed = join(f.remoteHome, ".local", "state", "host-run", "seed", "github.com-test-proj");
+      expect(sh(seed, "git config --get remote.origin.url")).toBe("git@github.com:test/proj.git");
+      expect(sh(seed, "git rev-parse refs/host-run/last")).toBe(sh(f.local, "git rev-parse HEAD"));
+      expect(readdirSync(join(f.remoteHome, "src"))).toEqual([]);
+      const second = hostRun(f, f.local, ["--lane=mac-ui", "--label=seeded", "--", "true"]);
+      expect(second.status, second.stderr).toBe(0);
+      expect(second.stderr).not.toContain("one-time copy");
+      expect(second.stderr).not.toContain("+ bundle");
+      // A new commit travels as a small bundle and advances the seed.
+      sh(f.local, "git -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit --quiet --allow-empty -m next");
+      const third = hostRun(f, f.local, ["--lane=mac-ui", "--label=seeded", "--", "git", "rev-parse", "HEAD"]);
+      expect(third.status, third.stderr).toBe(0);
+      expect(third.stderr).toContain("+ bundle");
+      expect(sh(seed, "git rev-parse refs/host-run/last")).toBe(sh(f.local, "git rev-parse HEAD"));
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+});
+
+function computeConfig(f: Fixture, extra: object = {}): void {
+  writeFileSync(join(f.env.XDG_CONFIG_HOME!, "host-run", "remote.json"), JSON.stringify({
+    compute: { forwardTo: "fakehost", remoteHostRun: hostRunScript, ...extra },
+  }));
+}
+
+function workspaceRoot(f: Fixture): string {
+  return join(f.remoteHome, ".local", "state", "host-run", "compute", "github.com-test-proj");
+}
+
+const computeHost = test.skipIf(process.platform !== "darwin" && process.platform !== "linux");
+
+describe("heavy compute forwarding end to end (fake ssh)", () => {
+  computeHost("runs heavy work in a cached workspace under the remote compute lane with only allowlisted env", () => {
+    const f = fixture();
+    try {
+      computeConfig(f);
+      const marker = join(f.root, "ran-locally");
+      const result = hostRun(f, join(f.local, "sub"), ["--mode=heavy", "--label=build", "--", "sh", "-c",
+        `test "$LOCAL_EFFICIENCY_FORWARDED" = 1 || touch ${marker}; echo pwd=$(pwd); cat ../notes.txt;`
+          + " echo incremental=${CARGO_INCREMENTAL:-unset} jobs=${HRA_JOBS:-unset} target=${CARGO_TARGET_DIR:-unset}"
+          + " token=${CARGO_REGISTRY_TOKEN:-unset} gh=${GH_TOKEN:-unset}; echo lease=$LOCAL_EFFICIENCY_LEASE; exit 3"],
+      {
+        CARGO_INCREMENTAL: "0", CARGO_REGISTRY_TOKEN: "secret", CARGO_TARGET_DIR: "/opt/target", GH_TOKEN: "ghp_secret", HRA_JOBS: "3",
+        FAKE_SSH_DROP: "CARGO_INCREMENTAL CARGO_REGISTRY_TOKEN CARGO_TARGET_DIR GH_TOKEN HRA_JOBS",
+      });
+      // A real failure on the remote is the answer: exit 3, no local rerun.
+      expect(result.status, result.stderr).toBe(3);
+      expect(existsSync(marker)).toBe(false);
+      expect(result.stderr).toContain("exited 3 on fakehost");
+      expect(result.stderr).toContain("not rerunning it here");
+      expect(result.stdout).toContain(`pwd=${join(workspaceRoot(f), "slot-1", "tree", "sub")}`);
+      expect(result.stdout).toContain("plus a local edit");
+      expect(result.stdout).toContain("incremental=0 jobs=3 target=unset token=unset gh=unset");
+      expect(result.stderr).toContain("forwarding heavy compute build to fakehost");
+      // The caller's own allowlisted settings (MAKEFLAGS under a build runner) may also travel.
+      expect(result.stderr).toMatch(/env [^,]*\bCARGO_INCREMENTAL\b[^,]*\bHRA_JOBS\b/u);
+      expect(result.stderr).toContain("not sent: CARGO_REGISTRY_TOKEN CARGO_TARGET_DIR");
+      expect(result.stdout).toMatch(/lease=\{[^\n]*"lane":"compute"/u);
+      expect(result.stdout).toMatch(/lease=\{[^\n]*"mode":"heavy"/u);
+      const claims = readFileSync(join(f.root, "claims.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      expect(claims).toHaveLength(1);
+      expect(remoteRuns(f)).toEqual([]);
+      expect(existsSync(join(workspaceRoot(f), "slot-1.lock"))).toBe(false);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  computeHost("resets the workspace to the commit plus patch on every run and keeps ignored build output", () => {
+    const f = fixture();
+    try {
+      computeConfig(f);
+      writeFileSync(join(f.local, ".gitignore"), "ignored.log\ntarget/\n");
+      const first = hostRun(f, f.local, ["--mode=exclusive", "--label=cold", "--", "sh", "-c",
+        "mkdir -p target && echo built > target/cache.txt && echo stray > stray.txt && echo scribble >> notes.txt"]);
+      expect(first.status, first.stderr).toBe(0);
+      expect(first.stderr).toContain("(cold: no build cache yet)");
+      writeFileSync(join(f.local, "notes.txt"), "committed\nsecond edit\n");
+      const second = hostRun(f, f.local, ["--mode=exclusive", "--label=warm", "--", "sh", "-c",
+        "cat target/cache.txt; test -e stray.txt && echo stray-left; cat notes.txt; test -e gone.txt || echo gone-deleted"]);
+      expect(second.status, second.stderr).toBe(0);
+      expect(second.stderr).not.toContain("cold");
+      expect(second.stdout).toBe("built\ncommitted\nsecond edit\ngone-deleted\n");
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  computeHost("never shares a workspace: one slot serializes runs, two slots run side by side, idle slots are evicted under disk pressure", async () => {
+    const f = fixture();
+    try {
+      const busy = join(f.root, "busy");
+      const probe = `if [ -e ${busy} ]; then echo OVERLAP; fi; touch ${busy}; sleep 2; rm -f ${busy}; pwd`;
+      type Run = { code: number | null; stdout: string; stderr: string };
+      const start = (): Promise<Run> => new Promise((resolveRun) => {
+        const child = spawn(process.execPath, [hostRunScript, "--mode=heavy", "--label=pair", "--", "sh", "-c", probe],
+          { cwd: f.local, env: f.env, stdio: ["ignore", "pipe", "pipe"] });
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+        child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+        child.once("exit", (code) => resolveRun({ code, stderr, stdout }));
+      });
+      computeConfig(f, { slots: 1 });
+      const serial = await Promise.all([start(), start()]);
+      for (const run of serial) expect(run.code, run.stderr).toBe(0);
+      expect(serial.map((run) => run.stdout).join("")).not.toContain("OVERLAP");
+      expect(serial.map((run) => run.stderr).join("")).toContain("cached workspaces for github.com-test-proj are in use; waiting");
+
+      computeConfig(f, { slots: 2 });
+      const parallel = await Promise.all([start(), start()]);
+      for (const run of parallel) expect(run.code, run.stderr).toBe(0);
+      expect(new Set(parallel.map((run) => run.stdout.trim().split("\n").at(-1))))
+        .toEqual(new Set([join(workspaceRoot(f), "slot-1", "tree"), join(workspaceRoot(f), "slot-2", "tree")]));
+
+      computeConfig(f, { slots: 2, minFreeGiB: 4096 });
+      const pressured = hostRun(f, f.local, ["--mode=heavy", "--label=pressure", "--", "true"]);
+      expect(pressured.status, pressured.stderr).toBe(0);
+      expect(pressured.stderr).toContain("evicted the cached workspace github.com-test-proj/slot-2");
+      expect(existsSync(join(workspaceRoot(f), "slot-2"))).toBe(false);
+      expect(existsSync(join(workspaceRoot(f), "slot-1", "tree"))).toBe(true);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 180_000);
+
+  computeHost("runs here, with one line saying why, when forwarding cannot start; --local and shared mode never forward", () => {
+    const f = fixture();
+    try {
+      computeConfig(f);
+      const where = ["sh", "-c", "echo forwarded=${LOCAL_EFFICIENCY_FORWARDED:-0}"];
+      const down = hostRun(f, f.local, ["--mode=heavy", "--label=down", "--", ...where], { FAKE_SSH_FAIL: "1" });
+      expect(down.status, down.stderr).toBe(0);
+      expect(down.stdout).toContain("forwarded=0");
+      expect(down.stderr).toContain("[host-run] running down on this Mac: cannot reach fakehost over ssh");
+      const notRepo = hostRun(f, f.root, ["--mode=heavy", "--label=plain", "--", ...where]);
+      expect(notRepo.status, notRepo.stderr).toBe(0);
+      expect(notRepo.stderr).toContain("running plain on this Mac: compute forwarding needs a Git repository");
+      // The remote cannot prepare the run (this directory holds only ignored files): nothing ran there.
+      mkdirSync(join(f.local, "logs"));
+      writeFileSync(join(f.local, "logs", "ignored.log"), "x\n");
+      const unprepared = hostRun(f, join(f.local, "logs"), ["--mode=heavy", "--label=logs", "--", ...where]);
+      expect(unprepared.status, unprepared.stderr).toBe(0);
+      expect(unprepared.stdout).toContain("forwarded=0");
+      expect(unprepared.stderr).toContain("running logs on this Mac: fakehost could not prepare the run: working directory logs does not exist");
+      for (const args of [["--mode=heavy", "--local"], ["--mode=shared"]]) {
+        const local = hostRun(f, f.local, [...args, "--label=here", "--", ...where], { FAKE_SSH_FAIL: "1" });
+        expect(local.status, local.stderr).toBe(0);
+        expect(local.stdout).toContain("forwarded=0");
+        expect(local.stderr).not.toContain("fakehost");
+      }
+      computeConfig(f, { modes: ["exclusive"] });
+      const heavyNotListed = hostRun(f, f.local, ["--mode=heavy", "--label=here", "--", ...where], { FAKE_SSH_FAIL: "1" });
+      expect(heavyNotListed.stderr).not.toContain("fakehost");
+      expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  test("--local is a compute-only flag", () => {
+    expect(parseHostRunArguments(["--mode=heavy", "--local", "--", "cargo", "build"])).toMatchObject({ local: true, lane: "compute" });
+    expect(() => parseHostRunArguments(["--lane=mac-ui", "--local", "--", "true"])).toThrow("--local is only valid with --lane=compute");
+    expect(() => parseHostRunArguments(["--local", "--local", "--", "true"])).toThrow("only once");
+  });
 });

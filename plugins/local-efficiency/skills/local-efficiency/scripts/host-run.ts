@@ -40,9 +40,10 @@ import {
   defaultForwardDependencies,
   forwardMacUiRun,
   forwardUnavailableExitCode,
-  resolveRemoteForwardConfig,
+  resolveRemoteConfigs,
   validateArtifactPath,
 } from "./mac-ui-forward";
+import { forwardComputeRun } from "./compute-forward";
 
 import {
   commandProgramLabel,
@@ -233,6 +234,8 @@ export type HostRunOptions = {
   readonly mode: ResourceMode;
   readonly stateRoot?: string;
   readonly fullCpu?: boolean;
+  /** compute only: never forward this run to another Mac. */
+  readonly local?: boolean;
 };
 
 function validateFullCpu(mode: ResourceMode, lane: CapabilityLane, fullCpu: unknown): void {
@@ -361,6 +364,7 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
   readonly maxHoldMilliseconds?: number | null;
   readonly mode: ResourceMode;
   readonly fullCpu?: boolean;
+  readonly local?: boolean;
 } {
   const delimiter = arguments_.indexOf("--");
   if (delimiter < 0) throw new Error("host-run requires -- before its command");
@@ -371,10 +375,16 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
   let maxHold: number | null | undefined;
   let maxHoldSupplied = false;
   let fullCpu = false;
+  let local = false;
   const artifacts: string[] = [];
   for (const argument of arguments_.slice(0, delimiter)) {
     if (argument.startsWith("--artifacts=")) {
       artifacts.push(validateArtifactPath(argument.slice("--artifacts=".length)));
+      continue;
+    }
+    if (argument === "--local") {
+      if (local) throw new Error("--local may appear only once");
+      local = true;
       continue;
     }
     if (argument === "--full-cpu") {
@@ -425,12 +435,16 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
   if (artifacts.length > 0 && lane !== "mac-ui") {
     throw new Error("--artifacts is only valid with --lane=mac-ui");
   }
+  if (local && lane !== "compute") {
+    throw new Error("--local is only valid with --lane=compute; other lanes already run here or must forward");
+  }
   return {
     ...(artifacts.length > 0 ? { artifacts: [...new Set(artifacts)] } : {}),
     command,
     ...(fullCpu ? { fullCpu: true } : {}),
     label: label ?? commandProgramLabel(command[0]),
     lane,
+    ...(local ? { local: true } : {}),
     ...(maxHoldSupplied ? { maxHoldMilliseconds: maxHold ?? null } : {}),
     mode: mode ?? "shared",
   };
@@ -1228,9 +1242,35 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
   if (options.artifacts !== undefined && options.artifacts.length > 0 && options.lane !== "mac-ui") {
     throw new Error("--artifacts is only valid with --lane=mac-ui");
   }
+  if (options.local === true && options.lane !== "compute") {
+    throw new Error("--local is only valid with --lane=compute");
+  }
+  const forwarded = environment.LOCAL_EFFICIENCY_FORWARDED === "1";
+  if (
+    options.lane === "compute"
+    && options.local !== true
+    && !forwarded
+    && environment.LOCAL_EFFICIENCY_LEASE === undefined
+    && (options.mode === "heavy" || options.mode === "exclusive")
+  ) {
+    // Heavy compute may move to a less loaded Mac; anything that stops the
+    // forward before the command starts runs it here instead.
+    const compute = resolveRemoteConfigs(environment).compute;
+    if (compute !== null && compute.modes.includes(options.mode)) {
+      const outcome = await forwardComputeRun({
+        command: options.command,
+        cwd: options.cwd,
+        label: options.label,
+        ...(options.maxHoldMilliseconds === undefined ? {} : { maxHoldMilliseconds: options.maxHoldMilliseconds }),
+        mode: options.mode,
+      }, compute, defaultForwardDependencies(environment));
+      if (outcome.ran) return outcome.exitCode;
+      console.error(`[host-run] running ${options.label} on this Mac: ${outcome.reason}`);
+    }
+  }
   if (options.lane === "mac-ui") {
     // A workstation never runs UI-driving work itself: forward it, or fail.
-    const forward = resolveRemoteForwardConfig(environment);
+    const forward = resolveRemoteConfigs(environment).macUi;
     if (forward !== null) {
       return await forwardMacUiRun({
         artifacts: options.artifacts ?? [],
@@ -1255,10 +1295,11 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
     return (await spawnCommand(options.command, options.cwd, environment)).exitCode;
   }
   // A machine that also runs timed CI measurements may name a CI machine
-  // lock. mac-ui runs hold it shared for the whole command, taken before the
-  // mac-ui lease so no lane slot is held while CI measures.
+  // lock. mac-ui runs, and compute runs forwarded here from a workstation,
+  // hold it shared for the whole command, taken before the lane lease so no
+  // slot is held while CI measures.
   let machineLock: HeldMachineLock | null = null;
-  if (options.lane === "mac-ui") {
+  if (options.lane === "mac-ui" || (options.lane === "compute" && forwarded)) {
     const lockConfig = resolveMachineLockConfig(environment);
     if (lockConfig !== null) {
       const interrupted: { signal: NodeJS.Signals | null } = { signal: null };
@@ -1664,7 +1705,7 @@ function usage(): string {
   return [
     "Usage: host-run --mode=shared|heavy|exclusive"
       + " [--lane=compute|browser|browser-auth|mac-native|mac-ui] [--label=LABEL]"
-      + " [--full-cpu] [--max-hold=DURATION|none] [--artifacts=PATH ...] -- COMMAND [ARGUMENT ...]",
+      + " [--full-cpu] [--local] [--max-hold=DURATION|none] [--artifacts=PATH ...] -- COMMAND [ARGUMENT ...]",
     "       host-run --status [--json]",
     "       host-run mac-ui install-helper [--app=PATH] | helper-status | probe",
     "       host-run --help",
