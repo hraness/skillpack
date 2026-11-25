@@ -40,10 +40,11 @@ preserving sandbox, provider, repository, and release gates.
   absolute path and use `ABSOLUTE-HOST-RUN
   --mode=shared|heavy|exclusive
   --lane=compute|browser|browser-auth|mac-native|mac-ui --label=LABEL
-  [--max-hold=DURATION|none] [--full-cpu] [--artifacts=PATH ...] -- COMMAND ...` through
+  [--max-hold=DURATION|none] [--full-cpu] [--local|--remote] [--artifacts=PATH ...] -- COMMAND ...` through
   reviewed host access. Keep the complete wrapper and child argv visible to
   Codex. Use `ABSOLUTE-HOST-RUN --status [--json]` for a read-only live holder
-  and permit census without acquiring a lease.
+  and permit census without acquiring a lease, and `ABSOLUTE-HOST-RUN presence`
+  to see whether this Mac's owner is using it.
 - **Record or reuse deterministic focused validation:** use `validation-run`.
   Reuse is opt-in and is never valid for a required final integration,
   merge-queue, deployment, release, authenticated-browser, or network-sensitive
@@ -175,7 +176,7 @@ package or command.
   has one slot, so UI runs never fight over focus, and a 60 min default max
   hold. A `mac-ui` owner may run nested `mac-native` and compute steps, such
   as the build its UI tests need. On a workstation it is forwarded to another
-  Mac; see below.
+  Mac, or runs here only while the owner is away from the keyboard; see below.
 
 The browser, browser-auth, mac-native and mac-ui lanes bound their scarce capability while
 still sharing the weighted compute capacity; on those lanes `exclusive` means
@@ -215,8 +216,8 @@ detach a background server from scheduler custody.
 
 ## Mac UI forwarding
 
-A workstation, the Mac someone is using, never runs `mac-ui` work itself.
-On a host with `~/.config/host-run/remote.json` (or
+A workstation, the Mac someone is using, does not run `mac-ui` work while
+they use it. On a host with `~/.config/host-run/remote.json` (or
 `$XDG_CONFIG_HOME/host-run/remote.json`):
 
 ```json
@@ -225,7 +226,9 @@ On a host with `~/.config/host-run/remote.json` (or
 
 `host-run --lane=mac-ui` forwards the run to that ssh host. Agents call it
 exactly as they would locally; nothing else changes. Without the file the
-lane runs locally, so CI and other machines are unchanged.
+lane runs locally, so CI and other machines are unchanged. With a
+`presence` entry as well, UI work runs here while the owner is idle; see
+[Presence-aware placement](#presence-aware-placement).
 
 1. It reads the Git root, HEAD and `origin` of the working directory, finds
    the clone with the same origin under the remote `~/src`, and asks which
@@ -260,9 +263,10 @@ Mac's own `mac-ui` lease, queue timeout and max hold govern the run.
 It fails closed. If forwarding is configured but the host is unreachable, the
 repository has no clone there and cannot be seeded, the commit cannot be shipped, the user has no
 GUI session there, or the config is malformed, host-run exits 69
-(`MAC_UI_FORWARD_FAILED`) with the reason and never runs the UI work locally.
-There is no override flag; to watch a UI run on the workstation, remove the
-config file. `LOCAL_EFFICIENCY_REMOTE_CONFIG=ABSOLUTE-PATH` points at a
+(`MAC_UI_FORWARD_FAILED`) with the reason and never runs the UI work locally
+(with presence placement, it first waits for the owner to go idle).
+`--local` runs it here anyway, for when the owner asks to watch it;
+`--remote` forwards it even while the owner is idle. `LOCAL_EFFICIENCY_REMOTE_CONFIG=ABSOLUTE-PATH` points at a
 different config file, which must exist. Environment variables and stdin are
 not forwarded: put needed variables in the command (`env NAME=VALUE ...`).
 Submodules are not forwarded. A run that was already forwarded refuses to
@@ -339,6 +343,77 @@ another local step reads), it reads local-only state, credentials or private
 data, it binds a fixed port, or it talks to an attached device. Nested runs
 inside a lease and `mac-native` runs, `--full-cpu` included, are never
 forwarded.
+
+## Presence-aware placement
+
+A workstation that forwards work can also use it while its owner is not at
+the keyboard. Add a `presence` entry next to `macUi` and `compute`:
+
+```json
+{
+  "macUi": { "forwardTo": "hra2" },
+  "compute": { "forwardTo": "hra2", "modes": ["heavy", "exclusive"] },
+  "presence": { "keyIdleMinutes": 5 }
+}
+```
+
+Before each `mac-ui` or heavy compute run, host-run checks whether the
+owner is using this Mac and prints one line with its choice, such as
+`[host-run] placing ui-tests on HRANESS1: owner idle 12m, no video or call`.
+`host-run presence` prints the same check as JSON. The owner is:
+
+- **typing** when a key was pressed in the last `keyIdleMinutes` (default
+  5). Mouse and trackpad use alone, such as reading or browsing, does not
+  count.
+- **watching video** when an app holds a display-sleep assertion (`pmset -g
+  assertions`), as browsers and players do during playback. Keep-awake tools
+  (caffeinate, Amphetamine, KeepingYouAwake, Lungo, Theine) and processes
+  started by agents or builds (anything under `claude`, `codex`,
+  `cursor-agent`, `xcodebuild` or `ohd`) do not count.
+- **on a call** when a microphone or camera is in use, or the Mac is being
+  screen-shared. If the microphone and camera do not answer within 2 s, that
+  counts as a call too.
+- **away** when the screen is locked, every display is asleep, or the lid is
+  closed with no external display.
+- **idle** otherwise.
+
+Where the work goes:
+
+| Owner | `mac-ui` | heavy compute |
+| --- | --- | --- |
+| idle | here | here, if this Mac has the permits free and is no more loaded per core than the other Mac (or under 0.5 per core) |
+| away | other Mac: UI tests need an unlocked, awake screen | here, on the same capacity test |
+| typing, video or call | other Mac | other Mac |
+
+- **The owner comes back during a UI run.** host-run rechecks every
+  `pollSeconds` (default 2). On typing, video, a call or a lock it sends TERM
+  to the run's process group, KILL after `graceSeconds` (default 15), TERM
+  to any process the run started that left the group, and reruns the command
+  on the other Mac. Apps that XCTest or `open` launched are not the run's
+  children; XCTest closes the apps it launched when it is stopped. During a
+  UI run, display-sleep assertions from processes started after the run
+  began are ignored, so the app under test does not count as video; video in
+  an app that was already open does.
+- **The other Mac is unreachable.** A UI run waits, rechecking presence and
+  retrying the other Mac each minute, for up to `waitMinutes` (default 60),
+  then exits 69. It runs here as soon as the owner is idle, and never while
+  they are busy. Heavy compute runs here instead, as before.
+- **The owner comes back during a build here.** host-run never stops it. It
+  moves the build's process tree to background priority (as
+  `taskpolicy -b` does: lower CPU priority, efficiency cores, throttled disk)
+  and back to normal once the owner is idle or away again. It checks every
+  5 s.
+- **Overrides.** `--local` keeps the run here and `--remote` sends it to
+  the other Mac, which then fails closed with exit 69 and never runs here.
+  Use `--remote` when a run must not take focus here even if the owner looks
+  idle, such as testing host-run itself. Do not use `--local` to get around placement
+  unless the owner asks.
+
+Every signal is read without a privacy prompt or grant: key idle time comes
+from the HID system's per-event idle counters, which need no Input
+Monitoring access. A check takes about 25 ms once warm and up to about
+150 ms the first time on a busy Mac. Presence placement needs macOS; elsewhere
+host-run prints a line and places work as it did without it.
 
 ### CI machine lock
 

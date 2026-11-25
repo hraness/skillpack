@@ -121,6 +121,24 @@ describe("mac-ui forwarding config", () => {
       expect(() => parseRemoteConfigs(JSON.stringify(bad))).toThrow();
     }
   });
+
+  test("parses presence placement with defaults; it is off unless the key is present", () => {
+    expect(parseRemoteConfigs(JSON.stringify({ macUi: { forwardTo: "hra2" } })).presence).toBeNull();
+    expect(parseRemoteConfigs(JSON.stringify({ presence: {} })).presence)
+      .toEqual({ graceSeconds: 15, keyIdleMinutes: 5, pollSeconds: 2, waitMinutes: 60 });
+    expect(parseRemoteConfigs(JSON.stringify({ presence: { keyIdleMinutes: 10, waitMinutes: 5 } })).presence)
+      .toMatchObject({ keyIdleMinutes: 10, waitMinutes: 5 });
+    for (const bad of [
+      { presence: true },
+      { presence: { keyIdleMinutes: 0 } },
+      { presence: { keyIdleMinutes: 1.5 } },
+      { presence: { pollSeconds: 11 } },
+      { presence: { waitMinutes: 241 } },
+      { presence: { idleMinutes: 5 } },
+    ]) {
+      expect(() => parseRemoteConfigs(JSON.stringify(bad))).toThrow();
+    }
+  });
 });
 
 describe("mac-ui forwarding command construction", () => {
@@ -745,9 +763,206 @@ describe("heavy compute forwarding end to end (fake ssh)", () => {
     }
   }, 120_000);
 
-  test("--local is a compute-only flag", () => {
+  test("--local and --remote apply to compute and mac-ui only, and not together", () => {
     expect(parseHostRunArguments(["--mode=heavy", "--local", "--", "cargo", "build"])).toMatchObject({ local: true, lane: "compute" });
-    expect(() => parseHostRunArguments(["--lane=mac-ui", "--local", "--", "true"])).toThrow("--local is only valid with --lane=compute");
+    expect(parseHostRunArguments(["--lane=mac-ui", "--local", "--", "true"])).toMatchObject({ local: true, lane: "mac-ui" });
+    expect(parseHostRunArguments(["--lane=mac-ui", "--remote", "--", "true"])).toMatchObject({ remote: true, lane: "mac-ui" });
+    expect(() => parseHostRunArguments(["--lane=browser", "--local", "--", "true"])).toThrow("only valid with --lane=compute or --lane=mac-ui");
+    expect(() => parseHostRunArguments(["--lane=mac-native", "--remote", "--", "true"])).toThrow("only valid with --lane=compute or --lane=mac-ui");
+    expect(() => parseHostRunArguments(["--local", "--remote", "--", "true"])).toThrow("cannot be combined");
     expect(() => parseHostRunArguments(["--local", "--local", "--", "true"])).toThrow("only once");
+    expect(() => parseHostRunArguments(["--remote", "--remote", "--", "true"])).toThrow("only once");
   });
+});
+
+function presenceConfig(f: Fixture, facts: object, extra: object = {}): NodeJS.ProcessEnv {
+  writeFileSync(join(f.env.XDG_CONFIG_HOME!, "host-run", "remote.json"), JSON.stringify({
+    compute: { forwardTo: "fakehost", remoteHostRun: hostRunScript },
+    macUi: { forwardTo: "fakehost", remoteHostRun: hostRunScript },
+    presence: { graceSeconds: 1, ...extra },
+  }));
+  const path = join(f.root, "presence.json");
+  writeFileSync(path, JSON.stringify(facts));
+  return {
+    LOCAL_EFFICIENCY_PRESENCE_FIXTURE: path,
+    LOCAL_EFFICIENCY_PRESENCE_POLL_MS: "100",
+    LOCAL_EFFICIENCY_PRESENCE_RETRY_MS: "300",
+  };
+}
+
+function setFacts(f: Fixture, facts: object): void {
+  writeFileSync(join(f.root, "presence.json"), JSON.stringify(facts));
+}
+
+type Running = { code: Promise<number | null>; stderr: () => string; stdout: () => string };
+
+function startHostRun(f: Fixture, args: readonly string[], extraEnv: NodeJS.ProcessEnv): Running {
+  const child = spawn(process.execPath, [hostRunScript, ...args], {
+    cwd: f.local,
+    env: { ...f.env, ...extraEnv },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+  child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+  return {
+    code: new Promise((resolveExit) => child.once("exit", (code) => resolveExit(code))),
+    stderr: () => stderr,
+    stdout: () => stdout,
+  };
+}
+
+async function waitFor(condition: () => boolean, timeoutMs = 60_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) await Bun.sleep(50);
+}
+
+const where = ["sh", "-c", "echo forwarded=${LOCAL_EFFICIENCY_FORWARDED:-0}"];
+const typing = { keyIdleSeconds: 30 };
+
+// UI runs here need the mac-ui lane, which only exists on macOS.
+describe("presence-aware placement (fixture presence, fake ssh)", () => {
+  remoteMac("UI work runs here while the owner is idle and goes to the other Mac otherwise; --local and --remote override", () => {
+    const f = fixture();
+    try {
+      const env = presenceConfig(f, {});
+      const here = hostRun(f, f.local, ["--lane=mac-ui", "--label=ui", "--", ...where], env);
+      expect(here.status, here.stderr).toBe(0);
+      expect(here.stdout).toContain("forwarded=0");
+      expect(here.stderr).toMatch(/\[host-run\] placing ui on \S+: owner idle 1h00m, no video or call\n/u);
+      for (const [facts, reason] of [
+        [typing, "typed 30s ago"],
+        [{ video: [{ name: "Video Wake Lock", pid: 1, process: "IINA" }] }, "video playing in IINA"],
+        [{ camera: true }, "camera in use"],
+        [{ locked: true }, "screen locked; UI tests need an unlocked, awake screen"],
+      ] as const) {
+        setFacts(f, facts);
+        const away = hostRun(f, f.local, ["--lane=mac-ui", "--label=ui", "--", ...where], env);
+        expect(away.status, away.stderr).toBe(0);
+        expect(away.stdout).toContain("forwarded=1");
+        expect(away.stderr).toContain(`[host-run] placing ui on fakehost: ${reason}`);
+      }
+      const local = hostRun(f, f.local, ["--lane=mac-ui", "--local", "--label=ui", "--", ...where], env);
+      expect(local.stdout, local.stderr).toContain("forwarded=0");
+      expect(local.stderr).toContain(": --local");
+      setFacts(f, {});
+      const remote = hostRun(f, f.local, ["--lane=mac-ui", "--remote", "--label=ui", "--", ...where], env);
+      expect(remote.stdout, remote.stderr).toContain("forwarded=1");
+      expect(remote.stderr).toContain("placing ui on fakehost: --remote");
+      expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 180_000);
+
+  remoteMac("a UI run here stops when the owner starts typing and reruns on the other Mac", async () => {
+    const f = fixture();
+    try {
+      const env = presenceConfig(f, {});
+      const tag = `hostrun-handoff-${process.pid}-${Date.now()}`;
+      const run = startHostRun(f, ["--lane=mac-ui", "--label=handoff", "--", "sh", "-c",
+        `if [ "$LOCAL_EFFICIENCY_FORWARDED" = 1 ]; then echo ran-remotely; else echo ran-here; exec -a ${tag} sleep 60; fi`], env);
+      await waitFor(() => run.stdout().includes("ran-here"));
+      expect(run.stdout(), run.stderr()).toContain("ran-here");
+      setFacts(f, typing);
+      const code = await run.code;
+      expect(code, run.stderr()).toBe(0);
+      expect(run.stdout()).toContain("ran-remotely");
+      expect(run.stderr()).toContain("[host-run] typed 30s ago: stopping this run here (TERM, then KILL after 1s)");
+      expect(run.stderr()).toMatch(/handoff stopped on \S+ \(typed 30s ago\)[^\n]*; rerunning it on fakehost/u);
+      expect(spawnSync("pgrep", ["-f", tag]).status).toBe(1);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  remoteMac("with the other Mac unreachable, a busy owner means waiting: it runs here once they go idle, else gives up", async () => {
+    const f = fixture();
+    try {
+      const env = { ...presenceConfig(f, typing), FAKE_SSH_FAIL: "1", LOCAL_EFFICIENCY_PRESENCE_WAIT_MS: "60000" };
+      const run = startHostRun(f, ["--lane=mac-ui", "--label=wait", "--", ...where], env);
+      await waitFor(() => run.stderr().includes("waiting up to"));
+      expect(run.stdout()).toBe("");
+      setFacts(f, {});
+      expect(await run.code, run.stderr()).toBe(0);
+      expect(run.stdout()).toContain("forwarded=0");
+      expect(run.stderr()).toContain("cannot reach fakehost over ssh");
+      expect(run.stderr()).toMatch(/placing wait on \S+: owner idle/u);
+
+      setFacts(f, typing);
+      const marker = join(f.root, "ran");
+      const gaveUp = hostRun(f, f.local, ["--lane=mac-ui", "--label=wait", "--", "touch", marker],
+        { ...env, LOCAL_EFFICIENCY_PRESENCE_WAIT_MS: "1000" });
+      expect(gaveUp.status, gaveUp.stderr).toBe(forwardUnavailableExitCode);
+      expect(gaveUp.stderr).toContain("wait did not run: the owner stayed busy here (typed 30s ago) and fakehost stayed unreachable");
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+});
+
+describe("presence-aware heavy compute (fixture presence, fake ssh)", () => {
+  computeHost("goes to the other Mac while the owner is busy or this Mac is short of room, stays here otherwise", () => {
+    const f = fixture();
+    try {
+      const env = presenceConfig(f, typing);
+      const cases: [object, string, string][] = [
+        [typing, "forwarded=1", "placing build on fakehost: typed 30s ago"],
+        [{ load: { local: 0.1, remote: 0.9 } }, "forwarded=0", "owner idle 1h00m, no video or call; load 0.1/core here, 0.9/core on fakehost"],
+        [{ load: { local: 2, remote: 0.5 } }, "forwarded=1", "placing build on fakehost: owner idle 1h00m, no video or call, but fakehost is less loaded"],
+        [{ load: { localFreePermits: 0, remote: 2 } }, "forwarded=1", "permits it needs are free here"],
+        [{ locked: true, load: { local: 0.1, remote: null } }, "forwarded=0", "owner away (screen locked); fakehost did not report its load"],
+      ];
+      for (const [facts, expected, line] of cases) {
+        setFacts(f, facts);
+        const result = hostRun(f, f.local, ["--mode=heavy", "--label=build", "--", ...where], env);
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout).toContain(expected);
+        expect(result.stderr).toContain(line);
+      }
+      // The other Mac reports its real load when the fixture leaves it out.
+      setFacts(f, { load: { local: 0 } });
+      const measured = hostRun(f, f.local, ["--mode=heavy", "--label=build", "--", ...where], env);
+      expect(measured.stderr).toMatch(/load 0\.0\/core here, [0-9.]+\/core on fakehost/u);
+      // --remote never runs here.
+      const marker = join(f.root, "ran");
+      const remoteDown = hostRun(f, f.local, ["--mode=heavy", "--remote", "--label=build", "--", "touch", marker],
+        { ...env, FAKE_SSH_FAIL: "1" });
+      expect(remoteDown.status, remoteDown.stderr).toBe(forwardUnavailableExitCode);
+      expect(remoteDown.stderr).toContain("build was not forwarded: cannot reach fakehost");
+      expect(existsSync(marker)).toBe(false);
+      // Busy owner, unreachable remote: it runs here rather than not at all.
+      setFacts(f, typing);
+      const fallback = hostRun(f, f.local, ["--mode=heavy", "--label=build", "--", ...where], { ...env, FAKE_SSH_FAIL: "1" });
+      expect(fallback.stdout, fallback.stderr).toContain("forwarded=0");
+      expect(fallback.stderr).toContain("running build on this Mac: cannot reach fakehost");
+      expect(fallback.stderr).toContain("build continues at background priority");
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 180_000);
+
+  remoteMac("a build here moves to background priority while the owner is busy and back when they stop", async () => {
+    const f = fixture();
+    try {
+      const env = presenceConfig(f, typing);
+      const report = join(f.root, "priority");
+      const run = startHostRun(f, ["--mode=heavy", "--local", "--label=build", "--", "sh", "-c",
+        `sleep 1; ps -o pri= -p $$ > ${report}.tmp && mv ${report}.tmp ${report}.busy; while [ ! -e ${report}.go ]; do sleep 0.1; done; sleep 1; ps -o pri= -p $$ > ${report}.idle`], env);
+      await waitFor(() => existsSync(`${report}.busy`));
+      expect(run.stderr()).toContain("owner is busy (typed 30s ago); build continues at background priority");
+      setFacts(f, {});
+      await waitFor(() => run.stderr().includes("back at normal priority"));
+      writeFileSync(`${report}.go`, "");
+      expect(await run.code, run.stderr()).toBe(0);
+      const busy = Number(readFileSync(`${report}.busy`, "utf8"));
+      const normal = Number(readFileSync(`${report}.idle`, "utf8"));
+      expect(busy, run.stderr()).toBeLessThan(10);
+      expect(normal).toBeGreaterThan(busy);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
 });

@@ -36,7 +36,12 @@ import {
   type HeldMachineLock,
 } from "./machine-lock";
 import {
+  type ComputeForwardConfig,
+  type ForwardRequest,
   ForwardUnavailableError,
+  type PresenceConfig,
+  type RemoteForwardConfig,
+  RemoteUnreachableError,
   defaultForwardDependencies,
   forwardMacUiRun,
   forwardUnavailableExitCode,
@@ -44,6 +49,21 @@ import {
   validateArtifactPath,
 } from "./mac-ui-forward";
 import { forwardComputeRun } from "./compute-forward";
+import {
+  type HandoffState,
+  type Placement,
+  type Watcher,
+  computeYieldWatcher,
+  localLoadPerCore,
+  macUiHandoffWatcher,
+  placeCompute,
+  placeMacUi,
+  remoteLoadPerCore,
+  samplePresence,
+  terminateLeftovers,
+  thisHostName,
+} from "./placement";
+import { type Presence, type PresenceProbe, presenceProbe } from "./presence";
 
 import {
   commandProgramLabel,
@@ -234,8 +254,10 @@ export type HostRunOptions = {
   readonly mode: ResourceMode;
   readonly stateRoot?: string;
   readonly fullCpu?: boolean;
-  /** compute only: never forward this run to another Mac. */
+  /** compute and mac-ui: run on this Mac whatever the placement says. */
   readonly local?: boolean;
+  /** compute and mac-ui: run on the configured remote Mac or fail; never here. */
+  readonly remote?: boolean;
 };
 
 function validateFullCpu(mode: ResourceMode, lane: CapabilityLane, fullCpu: unknown): void {
@@ -356,6 +378,13 @@ export function chromeEnvironment(
   return additions;
 }
 
+function validatePlacementFlags(lane: CapabilityLane, local: unknown, remote: unknown): void {
+  if (local === true && remote === true) throw new Error("--local and --remote cannot be combined");
+  if ((local === true || remote === true) && lane !== "compute" && lane !== "mac-ui") {
+    throw new Error("--local and --remote are only valid with --lane=compute or --lane=mac-ui; other lanes always run here");
+  }
+}
+
 export function parseHostRunArguments(arguments_: readonly string[]): {
   readonly artifacts?: readonly string[];
   readonly command: readonly string[];
@@ -365,6 +394,7 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
   readonly mode: ResourceMode;
   readonly fullCpu?: boolean;
   readonly local?: boolean;
+  readonly remote?: boolean;
 } {
   const delimiter = arguments_.indexOf("--");
   if (delimiter < 0) throw new Error("host-run requires -- before its command");
@@ -376,6 +406,7 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
   let maxHoldSupplied = false;
   let fullCpu = false;
   let local = false;
+  let remote = false;
   const artifacts: string[] = [];
   for (const argument of arguments_.slice(0, delimiter)) {
     if (argument.startsWith("--artifacts=")) {
@@ -385,6 +416,11 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
     if (argument === "--local") {
       if (local) throw new Error("--local may appear only once");
       local = true;
+      continue;
+    }
+    if (argument === "--remote") {
+      if (remote) throw new Error("--remote may appear only once");
+      remote = true;
       continue;
     }
     if (argument === "--full-cpu") {
@@ -435,9 +471,7 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
   if (artifacts.length > 0 && lane !== "mac-ui") {
     throw new Error("--artifacts is only valid with --lane=mac-ui");
   }
-  if (local && lane !== "compute") {
-    throw new Error("--local is only valid with --lane=compute; other lanes already run here or must forward");
-  }
+  validatePlacementFlags(lane, local, remote);
   return {
     ...(artifacts.length > 0 ? { artifacts: [...new Set(artifacts)] } : {}),
     command,
@@ -445,6 +479,7 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
     label: label ?? commandProgramLabel(command[0]),
     lane,
     ...(local ? { local: true } : {}),
+    ...(remote ? { remote: true } : {}),
     ...(maxHoldSupplied ? { maxHoldMilliseconds: maxHold ?? null } : {}),
     mode: mode ?? "shared",
   };
@@ -570,6 +605,7 @@ function spawnCommand(
   environment: Readonly<NodeJS.ProcessEnv>,
   inheritedLeaseDescriptors: readonly number[] = [],
   hold: HoldLimit | null = null,
+  watch: Watcher | null = null,
 ): Promise<SpawnResult> {
   return new Promise((resolveExit, reject) => {
     const [program, ...arguments_] = command;
@@ -648,9 +684,21 @@ function spawnCommand(
         }, holdGraceMilliseconds(hold.maxHoldMilliseconds)));
       }, hold.maxHoldMilliseconds));
     }
+    const watchTimers: ReturnType<typeof setTimeout>[] = [];
+    const stopWatching = watch === null || child.pid === undefined
+      ? () => {}
+      : watch({
+        pid: child.pid,
+        stop: (graceMs) => {
+          signalChildTree("SIGTERM");
+          watchTimers.push(setTimeout(() => signalChildTree("SIGKILL"), graceMs));
+        },
+      });
     const removeSignalHandlers = (): void => {
       for (const signal of forwardedSignals) process.off(signal, forward);
       for (const timer of holdTimers) clearTimeout(timer);
+      for (const timer of watchTimers) clearTimeout(timer);
+      stopWatching();
     };
     child.once("error", (error) => {
       removeSignalHandlers();
@@ -1242,46 +1290,248 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
   if (options.artifacts !== undefined && options.artifacts.length > 0 && options.lane !== "mac-ui") {
     throw new Error("--artifacts is only valid with --lane=mac-ui");
   }
-  if (options.local === true && options.lane !== "compute") {
-    throw new Error("--local is only valid with --lane=compute");
-  }
+  validatePlacementFlags(options.lane, options.local, options.remote);
   const forwarded = environment.LOCAL_EFFICIENCY_FORWARDED === "1";
+  const nested = environment.LOCAL_EFFICIENCY_LEASE !== undefined;
+  let watch: Watcher | null = null;
   if (
     options.lane === "compute"
-    && options.local !== true
     && !forwarded
-    && environment.LOCAL_EFFICIENCY_LEASE === undefined
+    && !nested
     && (options.mode === "heavy" || options.mode === "exclusive")
   ) {
-    // Heavy compute may move to a less loaded Mac; anything that stops the
-    // forward before the command starts runs it here instead.
-    const compute = resolveRemoteConfigs(environment).compute;
-    if (compute !== null && compute.modes.includes(options.mode)) {
-      const outcome = await forwardComputeRun({
-        command: options.command,
-        cwd: options.cwd,
-        label: options.label,
-        ...(options.maxHoldMilliseconds === undefined ? {} : { maxHoldMilliseconds: options.maxHoldMilliseconds }),
-        mode: options.mode,
-      }, compute, defaultForwardDependencies(environment));
-      if (outcome.ran) return outcome.exitCode;
-      console.error(`[host-run] running ${options.label} on this Mac: ${outcome.reason}`);
-    }
+    const placed = await placeHeavyCompute(options, environment);
+    if (placed.kind === "ran") return placed.exitCode;
+    watch = placed.watch;
+  } else if (options.lane === "compute" && options.remote === true) {
+    throw new Error("--remote needs --mode=heavy or --mode=exclusive at the top level; this run is shared or nested");
   }
   if (options.lane === "mac-ui") {
-    // A workstation never runs UI-driving work itself: forward it, or fail.
-    const forward = resolveRemoteConfigs(environment).macUi;
-    if (forward !== null) {
-      return await forwardMacUiRun({
-        artifacts: options.artifacts ?? [],
-        command: options.command,
-        cwd: options.cwd,
-        label: options.label,
-        ...(options.maxHoldMilliseconds === undefined ? {} : { maxHoldMilliseconds: options.maxHoldMilliseconds }),
-        mode: options.mode,
-      }, forward, defaultForwardDependencies(environment));
+    const remote = resolveRemoteConfigs(environment);
+    const forward = remote.macUi;
+    const request = forwardRequest(options);
+    if (options.remote === true) {
+      if (forward === null) throw new Error("--remote needs a macUi entry in host-run/remote.json");
+      console.error(`[host-run] placing ${options.label} on ${forward.forwardTo}: --remote`);
+      return await forwardMacUiRun(request, forward, defaultForwardDependencies(environment));
+    }
+    if (forward !== null && options.local === true) {
+      console.error(`[host-run] placing ${options.label} on ${thisHostName()}: --local`);
+    } else if (forward !== null) {
+      const probe = remote.presence === null ? null : presenceProbe(environment);
+      if (remote.presence !== null && probe === null) {
+        console.error("[host-run] presence is unavailable on this platform; forwarding as configured");
+      }
+      if (remote.presence === null || probe === null) {
+        // A workstation without presence placement never runs UI-driving work itself.
+        return await forwardMacUiRun(request, forward, defaultForwardDependencies(environment));
+      }
+      return await placeMacUiRun(options, environment, request, forward, remote.presence, probe);
     }
   }
+  return await runHere(options, environment, forwarded, watch);
+}
+
+function forwardRequest(options: HostRunOptions): ForwardRequest {
+  return {
+    artifacts: options.artifacts ?? [],
+    command: options.command,
+    cwd: options.cwd,
+    label: options.label,
+    ...(options.maxHoldMilliseconds === undefined ? {} : { maxHoldMilliseconds: options.maxHoldMilliseconds }),
+    mode: options.mode,
+  };
+}
+
+function testMilliseconds(environment: Readonly<NodeJS.ProcessEnv>, name: string, fallback: number): number {
+  const value = Number(environment[name]);
+  return Number.isFinite(value) && value >= 10 ? value : fallback;
+}
+
+async function safeSample(probe: PresenceProbe, config: PresenceConfig): Promise<Presence | null> {
+  try {
+    return await samplePresence(probe, config);
+  } catch (error: unknown) {
+    console.error(`[host-run] presence check failed: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+}
+
+type ComputePlacement =
+  | { readonly kind: "ran"; readonly exitCode: number }
+  | { readonly kind: "here"; readonly watch: Watcher | null };
+
+/**
+ * Heavy compute on a workstation: forward it while the owner is busy or the
+ * other Mac has more room, keep it here while they are idle or away. A run
+ * kept here drops to background priority whenever the owner comes back.
+ */
+async function placeHeavyCompute(options: HostRunOptions, environment: NodeJS.ProcessEnv): Promise<ComputePlacement> {
+  const remote = resolveRemoteConfigs(environment);
+  const compute: ComputeForwardConfig | null = remote.compute !== null
+    && (options.mode === "heavy" || options.mode === "exclusive")
+    && remote.compute.modes.includes(options.mode)
+    ? remote.compute
+    : null;
+  const deps = defaultForwardDependencies(environment);
+  const forward = async (): Promise<ComputePlacement | null> => {
+    if (compute === null) return null;
+    const outcome = await forwardComputeRun({ ...forwardRequest(options), mode: options.mode as "heavy" | "exclusive" }, compute, deps);
+    if (outcome.ran) return { exitCode: outcome.exitCode, kind: "ran" };
+    if (options.remote === true) throw new ForwardUnavailableError(`${options.label} was not forwarded: ${outcome.reason}`);
+    console.error(`[host-run] running ${options.label} on this Mac: ${outcome.reason}`);
+    return null;
+  };
+  if (options.remote === true) {
+    if (compute === null) {
+      throw new Error(`--remote needs a compute entry in host-run/remote.json that covers --mode=${options.mode}`);
+    }
+    console.error(`[host-run] placing ${options.label} on ${compute.forwardTo}: --remote`);
+    return (await forward())!;
+  }
+  const probe = remote.presence === null ? null : presenceProbe(environment);
+  if (remote.presence !== null && probe === null) {
+    console.error("[host-run] presence is unavailable on this platform; placing as configured");
+  }
+  const config = remote.presence;
+  const yieldWatch = (initial: Presence | null): Watcher | null =>
+    probe === null || config === null
+      ? null
+      : computeYieldWatcher(
+        probe,
+        config,
+        options.label,
+        (line) => console.error(line),
+        initial?.busy === true ? initial : null,
+        testMilliseconds(environment, "LOCAL_EFFICIENCY_PRESENCE_POLL_MS", Math.max(config.pollSeconds, 5) * 1_000),
+      );
+  if (options.local === true) {
+    if (compute !== null || config !== null) console.error(`[host-run] placing ${options.label} on ${thisHostName()}: --local`);
+    return { kind: "here", watch: yieldWatch(probe === null || config === null ? null : await safeSample(probe, config)) };
+  }
+  if (compute === null) {
+    return { kind: "here", watch: yieldWatch(probe === null || config === null ? null : await safeSample(probe, config)) };
+  }
+  if (probe === null || config === null) {
+    // 0.8 behaviour: always try the remote first.
+    return (await forward()) ?? { kind: "here", watch: null };
+  }
+  const presence = await safeSample(probe, config);
+  if (presence === null) return (await forward()) ?? { kind: "here", watch: null };
+  let placement: Placement;
+  if (presence.busy) {
+    placement = { here: false, reason: presence.reason };
+  } else {
+    const overrides = presence.facts.load;
+    let localFreePermits = overrides?.localFreePermits;
+    if (localFreePermits === undefined) {
+      try {
+        localFreePermits = hostStatusReport({
+          environment,
+          ...(options.stateRoot === undefined ? {} : { stateRoot: options.stateRoot }),
+        }).availablePermits;
+      } catch {
+        localFreePermits = permitCapacity();
+      }
+    }
+    placement = placeCompute(presence, {
+      localFreePermits,
+      localLoadPerCore: overrides?.local ?? localLoadPerCore(),
+      needed: permitsForMode(options.mode),
+      remoteLoadPerCore: overrides !== undefined && "remote" in overrides
+        ? overrides.remote ?? null
+        : remoteLoadPerCore(deps, compute),
+      remoteName: compute.forwardTo,
+    });
+  }
+  if (placement.here) {
+    console.error(`[host-run] placing ${options.label} on ${thisHostName()}: ${placement.reason}`);
+    return { kind: "here", watch: yieldWatch(presence) };
+  }
+  console.error(`[host-run] placing ${options.label} on ${compute.forwardTo}: ${placement.reason}`);
+  return (await forward()) ?? { kind: "here", watch: yieldWatch(presence) };
+}
+
+/**
+ * UI work on a workstation: run it here only while the owner is idle at an
+ * unlocked screen, stop and rerun it on the other Mac if they come back,
+ * and otherwise forward it. When the other Mac is unreachable, wait (up to
+ * `waitMinutes`) for either the owner to go idle or the other Mac to answer.
+ */
+async function placeMacUiRun(
+  options: HostRunOptions,
+  environment: NodeJS.ProcessEnv,
+  request: ForwardRequest,
+  forward: RemoteForwardConfig,
+  config: PresenceConfig,
+  probe: PresenceProbe,
+): Promise<number> {
+  const deps = defaultForwardDependencies(environment);
+  const pollMs = testMilliseconds(environment, "LOCAL_EFFICIENCY_PRESENCE_POLL_MS", config.pollSeconds * 1_000);
+  const waitMs = testMilliseconds(environment, "LOCAL_EFFICIENCY_PRESENCE_WAIT_MS", config.waitMinutes * 60_000);
+  const retryMs = testMilliseconds(environment, "LOCAL_EFFICIENCY_PRESENCE_RETRY_MS", 60_000);
+  const effective = { ...config, pollSeconds: pollMs / 1_000 };
+  const startedWaiting = performance.now();
+  let lastRemoteAttempt = Number.NEGATIVE_INFINITY;
+  let unreachableReported = false;
+  let lastReason = "";
+  for (;;) {
+    const presence = await safeSample(probe, config);
+    const placement: Placement = presence === null
+      ? { here: false, reason: "presence check failed" }
+      : placeMacUi(presence);
+    lastReason = placement.reason;
+    if (placement.here) {
+      console.error(`[host-run] placing ${options.label} on ${thisHostName()}: ${placement.reason}`);
+      const state: HandoffState = { seen: new Map(), stoppedFor: null };
+      const exitCode = await runHere(
+        options,
+        environment,
+        false,
+        macUiHandoffWatcher(probe, effective, state, (line) => console.error(line)),
+      );
+      if (state.stoppedFor === null) return exitCode;
+      const left = terminateLeftovers(state.seen);
+      console.error(
+        `[host-run] ${options.label} stopped on ${thisHostName()} (${state.stoppedFor.reason})`
+        + `${left > 0 ? `; sent TERM to ${left} leftover process${left === 1 ? "" : "es"}` : ""}`
+        + `; rerunning it on ${forward.forwardTo}`,
+      );
+      lastRemoteAttempt = Number.NEGATIVE_INFINITY;
+      continue;
+    }
+    if (performance.now() - lastRemoteAttempt >= retryMs) {
+      lastRemoteAttempt = performance.now();
+      if (!unreachableReported) console.error(`[host-run] placing ${options.label} on ${forward.forwardTo}: ${placement.reason}`);
+      try {
+        return await forwardMacUiRun(request, forward, deps);
+      } catch (error: unknown) {
+        if (!(error instanceof RemoteUnreachableError)) throw error;
+        if (!unreachableReported) {
+          console.error(
+            `[host-run] ${error.message}; waiting up to ${formatDuration(waitMs)} for the owner to go idle`
+            + ` or ${forward.forwardTo} to answer (never stealing focus here meanwhile)`,
+          );
+          unreachableReported = true;
+        }
+      }
+    }
+    if (performance.now() - startedWaiting >= waitMs) {
+      throw new ForwardUnavailableError(
+        `${options.label} did not run: the owner stayed busy here (${lastReason})`
+        + ` and ${forward.forwardTo} stayed unreachable for ${formatDuration(waitMs)}`,
+      );
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, pollMs));
+  }
+}
+
+async function runHere(
+  options: HostRunOptions,
+  environment: NodeJS.ProcessEnv,
+  forwarded: boolean,
+  watch: Watcher | null,
+): Promise<number> {
   if (!capabilityPlatformSupported(options.lane)) {
     throw new Error(`the ${options.lane} capability lane requires macOS`);
   }
@@ -1292,7 +1542,7 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
       throw new Error("nested host-run cannot escalate its outer mode or capability lane");
     }
     assertInheritedLeaseDescriptors(inherited);
-    return (await spawnCommand(options.command, options.cwd, environment)).exitCode;
+    return (await spawnCommand(options.command, options.cwd, environment, [], null, watch)).exitCode;
   }
   // A machine that also runs timed CI measurements may name a CI machine
   // lock. mac-ui runs, and compute runs forwarded here from a workstation,
@@ -1318,7 +1568,7 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
     }
   }
   try {
-    return await runLeasedCommand(options, environment);
+    return await runLeasedCommand(options, environment, watch);
   } finally {
     machineLock?.release();
   }
@@ -1327,6 +1577,7 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
 async function runLeasedCommand(
   options: HostRunOptions,
   environment: NodeJS.ProcessEnv,
+  watch: Watcher | null,
 ): Promise<number> {
   const capacity = permitCapacity();
   const permitCount = permitsForMode(options.mode, availableParallelism(), options.lane, options.fullCpu);
@@ -1480,6 +1731,7 @@ async function runLeasedCommand(
               childEnvironment,
               [...outerDescriptors, lease.inheritedFileDescriptor],
               maxHold === null ? null : { label: options.label, maxHoldMilliseconds: maxHold },
+              watch,
             );
             record(
               result.holdTimedOut ? "hold-timeout" : result.exitCode === 0 ? "pass" : "fail",
@@ -1530,12 +1782,17 @@ async function runLeasedCommand(
 export type HostRunCliAction =
   | { readonly kind: "help" }
   | { readonly json: boolean; readonly kind: "status" }
+  | { readonly kind: "presence" }
   | { readonly appPath: string | null; readonly kind: "mac-ui"; readonly subcommand: MacUiSubcommand }
   | { readonly kind: "run"; readonly parsed: ReturnType<typeof parseHostRunArguments> };
 
 export type MacUiSubcommand = "install-helper" | "helper-status" | "probe";
 
 export function parseHostRunCli(arguments_: readonly string[]): HostRunCliAction {
+  if (arguments_[0] === "presence") {
+    if (arguments_.length > 1) throw new Error("usage: host-run presence");
+    return { kind: "presence" };
+  }
   if (arguments_[0] === "mac-ui") {
     const subcommand = arguments_[1];
     if (subcommand !== "install-helper" && subcommand !== "helper-status" && subcommand !== "probe") {
@@ -1701,12 +1958,39 @@ function runMacUiSubcommand(subcommand: MacUiSubcommand, appPath: string | null)
   return configured && !status.upToDate ? 1 : 0;
 }
 
+/** `host-run presence`: this Mac's presence as JSON, and where UI work and heavy compute would go. */
+async function printPresence(): Promise<number> {
+  const configs = resolveRemoteConfigs(process.env);
+  const config: PresenceConfig = configs.presence
+    ?? { graceSeconds: 15, keyIdleMinutes: 5, pollSeconds: 2, waitMinutes: 60 };
+  const probe = presenceProbe(process.env);
+  if (probe === null) {
+    console.log(JSON.stringify({ available: false, reason: "presence needs macOS" }, null, 2));
+    return 1;
+  }
+  const presence = await samplePresence(probe, config);
+  const macUi = placeMacUi(presence);
+  console.log(JSON.stringify({
+    available: true,
+    busy: presence.busy,
+    configured: configs.presence !== null,
+    facts: presence.facts,
+    host: thisHostName(),
+    keyIdleMinutes: config.keyIdleMinutes,
+    macUi: { here: macUi.here, reason: macUi.reason },
+    reason: presence.reason,
+    state: presence.state,
+  }, null, 2));
+  return 0;
+}
+
 function usage(): string {
   return [
     "Usage: host-run --mode=shared|heavy|exclusive"
       + " [--lane=compute|browser|browser-auth|mac-native|mac-ui] [--label=LABEL]"
-      + " [--full-cpu] [--local] [--max-hold=DURATION|none] [--artifacts=PATH ...] -- COMMAND [ARGUMENT ...]",
+      + " [--full-cpu] [--local|--remote] [--max-hold=DURATION|none] [--artifacts=PATH ...] -- COMMAND [ARGUMENT ...]",
     "       host-run --status [--json]",
+    "       host-run presence",
     "       host-run mac-ui install-helper [--app=PATH] | helper-status | probe",
     "       host-run --help",
   ].join("\n");
@@ -1724,6 +2008,8 @@ if (import.meta.main) {
       process.exitCode = 0;
     } else if (action.kind === "mac-ui") {
       process.exitCode = runMacUiSubcommand(action.subcommand, action.appPath);
+    } else if (action.kind === "presence") {
+      process.exitCode = await printPresence();
     } else {
       process.exitCode = await runHostCommand({ ...action.parsed, cwd: process.cwd() });
     }

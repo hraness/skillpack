@@ -75,9 +75,26 @@ export type ComputeForwardConfig = RemoteForwardConfig & {
   readonly slots: number;
 };
 
+/**
+ * Presence-aware placement on a workstation the owner also uses: run work
+ * here while they are idle or away, elsewhere while they type, watch video or
+ * are on a call.
+ */
+export type PresenceConfig = {
+  /** Keys idle at least this long counts as not typing. */
+  readonly keyIdleMinutes: number;
+  /** How often a run here rechecks presence. */
+  readonly pollSeconds: number;
+  /** Longest wait for the owner to go idle or the other Mac to come back. */
+  readonly waitMinutes: number;
+  /** Time a stopped UI run gets between TERM and KILL. */
+  readonly graceSeconds: number;
+};
+
 export type RemoteConfigs = {
   readonly compute: ComputeForwardConfig | null;
   readonly macUi: RemoteForwardConfig | null;
+  readonly presence: PresenceConfig | null;
 };
 
 export const defaultSeedMaxMiB = 2048;
@@ -160,7 +177,7 @@ export function parseRemoteConfigs(text: string, source = "remote.json"): Remote
   }
   const root = parsed as Record<string, unknown>;
   for (const key of Object.keys(root)) {
-    if (key !== "macUi" && key !== "compute") throw new Error(`${source} has an unknown key: ${key}`);
+    if (key !== "macUi" && key !== "compute" && key !== "presence") throw new Error(`${source} has an unknown key: ${key}`);
   }
   const macUi = root.macUi === undefined ? null : parseForwardTarget(root.macUi, "macUi", source, []).target;
   let compute: ComputeForwardConfig | null = null;
@@ -185,7 +202,26 @@ export function parseRemoteConfigs(text: string, source = "remote.json"): Remote
       slots: boundedInteger(entry.slots, 2, "compute.slots", source, 1, 8),
     };
   }
-  return { compute, macUi };
+  let presence: PresenceConfig | null = null;
+  if (root.presence !== undefined) {
+    const entry = root.presence;
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      throw new Error(`${source}: presence must be an object`);
+    }
+    const fields = entry as Record<string, unknown>;
+    for (const key of Object.keys(fields)) {
+      if (!["keyIdleMinutes", "pollSeconds", "waitMinutes", "graceSeconds"].includes(key)) {
+        throw new Error(`${source}: presence has an unknown key: ${key}`);
+      }
+    }
+    presence = {
+      graceSeconds: boundedInteger(fields.graceSeconds, 15, "presence.graceSeconds", source, 1, 120),
+      keyIdleMinutes: boundedInteger(fields.keyIdleMinutes, 5, "presence.keyIdleMinutes", source, 1, 120),
+      pollSeconds: boundedInteger(fields.pollSeconds, 2, "presence.pollSeconds", source, 1, 10),
+      waitMinutes: boundedInteger(fields.waitMinutes, 60, "presence.waitMinutes", source, 1, 240),
+    };
+  }
+  return { compute, macUi, presence };
 }
 
 /** The `macUi` entry of remote.json, or null. */
@@ -223,7 +259,7 @@ export function resolveRemoteConfigs(
     if (
       typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"
       && (explicit === undefined || explicit === "")
-    ) return { compute: null, macUi: null };
+    ) return { compute: null, macUi: null, presence: null };
     throw new Error(`cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`);
   }
   return parseRemoteConfigs(text, path);
@@ -463,9 +499,17 @@ export function remoteCall(
   });
 }
 
+/** The remote did not answer over ssh; nothing was sent or started. */
+export class RemoteUnreachableError extends ForwardUnavailableError {
+  constructor(message: string) {
+    super(message);
+    this.name = "RemoteUnreachableError";
+  }
+}
+
 function unreachable(config: RemoteForwardConfig, result: RunResult, lane: string): ForwardUnavailableError {
   const reason = `cannot reach ${config.forwardTo} over ssh (${lastLines(result.stderr) || `exit ${result.status ?? "timeout"}`})`;
-  return new ForwardUnavailableError(lane === "mac-ui"
+  return new RemoteUnreachableError(lane === "mac-ui"
     ? `cannot reach ${config.forwardTo} over ssh to run mac-ui work (${lastLines(result.stderr) || `exit ${result.status ?? "timeout"}`}).`
       + ` UI-driving tests never run on this workstation; fix the connection, or remove ${config.source} to run them here`
     : reason);

@@ -16,7 +16,7 @@ Bootstrap links these into the configured Bun `bin` directory:
 
 | Command | Purpose |
 | --- | --- |
-| `host-run` | Capability-lane scheduler and `--status` holder census: compute (heavy builds sent to a less loaded Mac when configured), browser, browser-auth, mac-native, and mac-ui (UI tests, sent to another Mac when configured, through the HostRun UI app there when installed) |
+| `host-run` | Capability-lane scheduler and `--status` holder census: compute (heavy builds sent to a less loaded Mac when configured), browser, browser-auth, mac-native, and mac-ui (UI tests, sent to another Mac when configured, through the HostRun UI app there when installed). With presence placement, a workstation keeps both here while its owner is idle and sends them away while they type, watch video or are on a call; `host-run presence` shows the check |
 | `validation-run` | Bounded validation wrapper with receipts |
 | `workspace-audit` | Read-only inventory of repositories and checkouts |
 | `session-audit` | Agent session and approval-surface inventory |

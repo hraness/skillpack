@@ -214,6 +214,14 @@ cleanup)
   exit 0
   ;;
 
+load)
+  # Cores and one-minute load average, for placing heavy work.
+  printf 'cores\t%s\n' "$(sysctl -n hw.ncpu 2>/dev/null || getconf _NPROCESSORS_ONLN)"
+  if [ -r /proc/loadavg ]; then load=$(cut -d' ' -f1 /proc/loadavg); else load=$(sysctl -n vm.loadavg 2>/dev/null | awk '{ print $2 }'); fi
+  printf 'load\t%s\n' "$load"
+  exit 0
+  ;;
+
 run | compute) ;;
 
 *)
