@@ -138,9 +138,9 @@ describe("mac-ui forwarding command construction", () => {
     ]);
     expect(remoteHostRunArguments({ ...request, maxHoldMilliseconds: 90 * 60_000 })).toContain("--max-hold=5400000ms");
     expect(remoteHostRunArguments({ ...request, maxHoldMilliseconds: null })).toContain("--max-hold=none");
-    expect(forwardDeadlineMilliseconds(undefined)).toBe((120 + 60 + 15) * 60_000);
-    expect(forwardDeadlineMilliseconds(10 * 60_000)).toBe((120 + 10 + 15) * 60_000);
-    expect(forwardDeadlineMilliseconds(null)).toBe((120 + 24 * 60 + 15) * 60_000);
+    expect(forwardDeadlineMilliseconds(undefined)).toBe((120 + 120 + 60 + 15) * 60_000);
+    expect(forwardDeadlineMilliseconds(10 * 60_000)).toBe((120 + 120 + 10 + 15) * 60_000);
+    expect(forwardDeadlineMilliseconds(null)).toBe((120 + 120 + 24 * 60 + 15) * 60_000);
     expect(newForwardId(new Date("2026-11-25T01:02:03.456Z"))).toMatch(/^20261125-010203-[0-9a-f]{8}$/u);
   });
 
