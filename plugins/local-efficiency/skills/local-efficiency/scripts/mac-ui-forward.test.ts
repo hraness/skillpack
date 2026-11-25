@@ -321,8 +321,13 @@ function remoteRuns(f: Fixture): string[] {
   return existsSync(root) ? readdirSync(root) : [];
 }
 
+// The remote half runs host-run --lane=mac-ui, which only runs on macOS, so
+// the tests that reach the remote command run on macOS only. The fail-closed
+// test never reaches it and runs everywhere.
+const remoteMac = test.skipIf(process.platform !== "darwin");
+
 describe("mac-ui forwarding end to end (fake ssh, direct launcher)", () => {
-  test("runs at the local HEAD with uncommitted changes applied, returns the exit code, copies artifacts and cleans up", () => {
+  remoteMac("runs at the local HEAD with uncommitted changes applied, returns the exit code, copies artifacts and cleans up", () => {
     if (process.platform !== "darwin" && process.platform !== "linux") return;
     const f = fixture();
     try {
@@ -364,7 +369,7 @@ describe("mac-ui forwarding end to end (fake ssh, direct launcher)", () => {
     }
   }, 120_000);
 
-  test("sends no bundle when the remote clone already has HEAD", () => {
+  remoteMac("sends no bundle when the remote clone already has HEAD", () => {
     const f = fixture();
     try {
       sh(f.local, `git push --quiet ${join(f.root, "origin.git")} HEAD:main`);
@@ -409,7 +414,7 @@ describe("mac-ui forwarding end to end (fake ssh, direct launcher)", () => {
     }
   }, 120_000);
 
-  test("a local interrupt stops the remote run and removes its tree", async () => {
+  remoteMac("a local interrupt stops the remote run and removes its tree", async () => {
     const f = fixture();
     try {
       const tag = `hostrun-cancel-${process.pid}-${Date.now()}`;
