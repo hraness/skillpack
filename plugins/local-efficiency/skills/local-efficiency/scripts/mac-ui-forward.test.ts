@@ -248,7 +248,7 @@ function fixture(options: { readonly remoteClone?: boolean; readonly config?: ob
   const root = realpathSync(mkdtempSync(join(tmpdir(), "le-forward-e2e-")));
   const git = "git -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false";
   const origin = join(root, "origin.git");
-  sh(root, `git init --quiet --bare ${origin} && git init --quiet -b main seed`);
+  sh(root, `git init --quiet --bare -b main ${origin} && git init --quiet -b main seed`);
   const seed = join(root, "seed");
   writeFileSync(join(seed, "notes.txt"), "committed\n");
   writeFileSync(join(seed, "gone.txt"), "delete me\n");
