@@ -1,6 +1,6 @@
 {
   "name": "local-efficiency",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Managed Codex and Claude autonomy, local scheduling, CI isolation, and guarded maintenance for Hraness repository work.",
   "author": {
     "name": "Hraness",

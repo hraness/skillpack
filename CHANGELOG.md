@@ -1,5 +1,22 @@
 # Changelog
 
+## local-efficiency 0.9.0 - 2026-11-25
+
+- With a `presence` entry in `~/.config/host-run/remote.json`, a
+  workstation checks whether its owner is using it before each UI or heavy
+  build run, and prints where the run goes and why.
+- UI tests run here only while the owner is idle at an unlocked screen. If
+  they start typing, play video, join a call or lock the screen, the run
+  stops here and reruns on the other Mac. While they are busy and the other
+  Mac is unreachable, the run waits instead of taking focus.
+- Heavy builds stay here while the owner is idle or away and this Mac has
+  room, and go to the other Mac otherwise. A build already running here
+  drops to background priority while the owner is busy and returns to
+  normal afterwards.
+- `host-run presence` prints the check as JSON. `--remote` sends a run to
+  the other Mac or fails; `--local` now also applies to UI runs. No signal
+  needs a privacy prompt or grant.
+
 ## local-efficiency 0.8.0 - 2026-11-25
 
 - A workstation can send heavy and exclusive compute runs to another Mac by
