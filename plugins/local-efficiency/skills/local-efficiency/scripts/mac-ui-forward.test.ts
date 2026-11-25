@@ -445,3 +445,72 @@ describe("mac-ui forwarding end to end (fake ssh, direct launcher)", () => {
     }
   }, 120_000);
 });
+
+// The helper's launchd test needs a GUI launchd domain (a logged-in console user).
+const guiDomain = process.platform === "darwin"
+  && spawnSync("launchctl", ["print", `gui/${process.getuid?.() ?? 0}`], { stdio: "ignore" }).status === 0;
+const launchdMac = test.skipIf(!guiDomain);
+
+function fakeRemoteHostRun(root: string): string {
+  // Stands in for the remote host-run: runs the command after "--", so the
+  // launchd job needs none of the test's environment.
+  const path = join(root, "fake-host-run");
+  writeFileSync(path, "#!/bin/bash\nwhile [ $# -gt 0 ] && [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n");
+  chmodSync(path, 0o755);
+  return path;
+}
+
+function configureHelper(f: Fixture, app: unknown): void {
+  mkdirSync(join(f.remoteHome, ".config", "host-run"), { recursive: true });
+  writeFileSync(join(f.remoteHome, ".config", "host-run", "mac-ui.json"), JSON.stringify({ helper: app === undefined ? {} : { app } }));
+}
+
+describe("mac-ui forwarding through the HostRun UI helper", () => {
+  remoteMac("a configured helper that is missing or unsigned stops the run with 69 instead of falling back to bash", () => {
+    const f = fixture();
+    try {
+      const marker = join(f.root, "ran");
+      const command = ["--lane=mac-ui", "--label=helper-closed", "--", "sh", "-c", `touch ${marker}`];
+      const app = join(f.root, "HostRun UI.app");
+      configureHelper(f, app);
+      const missing = hostRun(f, f.local, command);
+      expect(missing.status).toBe(forwardUnavailableExitCode);
+      expect(missing.stderr).toContain("is missing; run host-run mac-ui install-helper");
+      mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
+      writeFileSync(join(app, "Contents", "MacOS", "host-run-ui"), "#!/bin/bash\nexec /bin/bash \"$@\"\n");
+      chmodSync(join(app, "Contents", "MacOS", "host-run-ui"), 0o755);
+      const unsigned = hostRun(f, f.local, command);
+      expect(unsigned.status).toBe(forwardUnavailableExitCode);
+      expect(unsigned.stderr).toContain("does not pass codesign --verify");
+      configureHelper(f, undefined);
+      const malformed = hostRun(f, f.local, command);
+      expect(malformed.status).toBe(forwardUnavailableExitCode);
+      expect(malformed.stderr).toContain("has no helper.app");
+      expect(existsSync(marker)).toBe(false);
+      expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  launchdMac("runs the job in the GUI session under the helper app and passes output and exit code through", async () => {
+    const f = fixture();
+    try {
+      const { installHelper } = await import("./mac-ui-helper");
+      const app = join(f.root, "Apps", "HostRun UI.app");
+      installHelper({ appPath: app, configPath: join(f.remoteHome, ".config", "host-run", "mac-ui.json"), log: () => {} });
+      writeFileSync(join(f.env.XDG_CONFIG_HOME!, "host-run", "remote.json"), JSON.stringify({
+        macUi: { forwardTo: "fakehost", remoteHostRun: fakeRemoteHostRun(f.root) },
+      }));
+      const result = hostRun(f, f.local, ["--lane=mac-ui", "--label=helper", "--", "sh", "-c",
+        "echo responsible=$(ps -o comm= -p $(ps -o ppid= -p $PPID)); echo oops >&2; exit 5"],
+      { LOCAL_EFFICIENCY_REMOTE_LAUNCHER: "launchd" });
+      expect(result.status, result.stderr).toBe(5);
+      expect(result.stdout).toContain(`responsible=${join(app, "Contents", "MacOS", "host-run-ui")}`);
+      expect(result.stderr).toContain("oops");
+      expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+});

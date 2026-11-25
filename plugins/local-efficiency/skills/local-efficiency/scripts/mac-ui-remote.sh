@@ -16,6 +16,12 @@
 #   cancel ID                      ask a running job to stop (TERM)
 #   fetch ID PATH...               write a tar of PATH... from the tree
 #   cleanup ID                     unload the job and remove the run directory
+#
+# When the host's ~/.config/host-run/mac-ui.json names a HostRun UI.app
+# helper (`host-run mac-ui install-helper` writes it), the launchd job runs
+# through that app so macOS privacy grants apply to it rather than to
+# /bin/bash. A configured helper that is missing or broken stops the run with
+# exit 69; it never falls back to /bin/bash.
 set -u
 
 state_root="$HOME/.local/state/host-run/remote"
@@ -137,11 +143,27 @@ case "$sha" in "" | *[!0-9a-f]*) die "invalid commit: $sha" ;; esac
 case "$deadline_s" in "" | *[!0-9]*) die "invalid deadline: $deadline_s" ;; esac
 [ -e "$repo/.git" ] || die "no repository at $repo"
 
+# The helper app, when this host is configured for one. Checked before any
+# state is created so a broken install fails fast.
+helper=""
+helper_config=${XDG_CONFIG_HOME:-$HOME/.config}/host-run/mac-ui.json
+if [ -e "$helper_config" ]; then
+  helper_app=$(plutil -extract helper.app raw -o - "$helper_config" 2>/dev/null) \
+    || die "$helper_config has no helper.app; run host-run mac-ui install-helper on $host"
+  helper="$helper_app/Contents/MacOS/host-run-ui"
+  [ -x "$helper" ] || die "HostRun UI is configured in $helper_config but $helper is missing; run host-run mac-ui install-helper on $host"
+  codesign --verify --strict "$helper_app" >/dev/null 2>&1 \
+    || die "HostRun UI at $helper_app does not pass codesign --verify; run host-run mac-ui install-helper on $host"
+  codesign --display --verbose=2 "$helper_app" 2>&1 | grep -qx 'Identifier=com.hraness.host-run-ui' \
+    || die "$helper_app is not signed as com.hraness.host-run-ui; run host-run mac-ui install-helper on $host"
+fi
+
 mkdir -p "$state_root" || die "cannot create $state_root"
 chmod 700 "$state_root" "$HOME/.local/state/host-run" 2>/dev/null
 sweep_stale
 dir="$state_root/$id"
 mkdir "$dir" || die "run directory $dir already exists"
+chmod 700 "$dir"
 label=$(job_label "$id")
 started=0
 cat_pids=()
@@ -222,6 +244,14 @@ if [ "$launcher" = launchd ]; then
   cat_pids+=($!)
   cat "$dir/stderr" >&2 &
   cat_pids+=($!)
+  if [ -n "$helper" ]; then
+    token=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
+    [ ${#token} -eq 48 ] || prepare_failed "could not create a one-time token"
+    (umask 077 && printf '%s\n' "$token" >"$dir/helper-token") || prepare_failed "could not write the one-time token"
+    program="<string>$(xml_escape "$helper")</string><string>run</string><string>$(xml_escape "$dir")</string><string>$token</string>"
+  else
+    program="<string>/bin/bash</string><string>$(xml_escape "$dir/job.sh")</string>"
+  fi
   cat >"$dir/job.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -229,9 +259,11 @@ if [ "$launcher" = launchd ]; then
 <dict>
   <key>Label</key><string>$(xml_escape "$label")</string>
   <key>ProgramArguments</key>
-  <array><string>/bin/bash</string><string>$(xml_escape "$dir/job.sh")</string></array>
+  <array>$program</array>
   <key>StandardOutPath</key><string>$(xml_escape "$dir/stdout")</string>
   <key>StandardErrorPath</key><string>$(xml_escape "$dir/stderr")</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>HOME</key><string>$(xml_escape "$HOME")</string></dict>
   <key>ProcessType</key><string>Interactive</string>
   <key>RunAtLoad</key><true/>
 </dict>
@@ -300,6 +332,9 @@ done
 if [ -f "$dir/exit" ]; then
   rc=$(tr -dc '0-9' <"$dir/exit")
   [ -n "$rc" ] || rc=1
+elif [ -n "$helper" ] && [ "$launcher" = launchd ] && [ -e "$dir/helper-token" ]; then
+  printf '[host-run remote %s] HostRun UI did not start the job\n' "$host" >&2
+  rc=$unavailable
 else
   printf '[host-run remote %s] job ended without reporting a status\n' "$host" >&2
   rc=1

@@ -296,6 +296,59 @@ script, which belongs to the CI account. Only `shared` is accepted.
 - `LOCAL_EFFICIENCY_MACHINE_LOCK_CONFIG=ABSOLUTE-PATH` points at a different
   file, which must exist. A malformed file is an error, never a silent skip.
 
+### Privacy permissions: the HostRun UI app
+
+macOS gives Accessibility, Screen Recording, Input Monitoring and Automation
+to the program launchd started, and everything it starts inherits them. For a
+forwarded run that program is normally `/bin/bash`, and granting it would
+give every shell on the Mac control of the screen. A Mac that runs UI tests
+needing those permissions installs a small helper app instead:
+
+```sh
+host-run mac-ui install-helper     # builds ~/Applications/HostRun UI.app
+host-run mac-ui helper-status      # app, bundle id, code hash, up to date or not
+```
+
+`install-helper` compiles the checked-in C launcher, signs it ad hoc as
+`com.hraness.host-run-ui`, and writes `~/.config/host-run/mac-ui.json`
+(`{ "helper": { "app": "..." } }`). From then on each forwarded run on that
+Mac starts through the app, so the owner grants the permissions to
+`HostRun UI.app` alone. Grants for an ad-hoc app follow its code hash, so the
+install only rebuilds when the launcher's own source changes; a host-run
+update or a new Xcode leaves the app, and its grants, alone. When the source
+does change, `install-helper` says so and the grants must be given again.
+
+- **What it runs.** Only the job script the remote side staged for this run.
+  It refuses unless launchd started it as that run's job, the run directory
+  is a private directory directly under `~/.local/state/host-run/remote`,
+  and the command line carries the run's one-time token, which it deletes
+  before starting. Any other argument list, a shell calling it directly, or a
+  reused run directory exits 69. It never execs: the job stays its child, so
+  the attribution holds, and it passes TERM, INT and HUP through and exits
+  with the job's status.
+- **What it does not stop.** Code already running as that user can stage a
+  run directory and load a launchd job the same way the remote side does, and
+  every command a forwarded run starts gets the permissions. The app keeps
+  the permissions away from ordinary shells, ssh sessions and stray argv, not
+  from the user account itself.
+- **Fails closed.** When `mac-ui.json` exists but the app is missing, fails
+  `codesign --verify`, or has another identifier, the run exits 69 before
+  anything starts; it never falls back to `/bin/bash`. Without the file runs
+  start through `/bin/bash` as before, which is fine for UI tests that need no
+  privacy grants. Only forwarded runs use the app; a `mac-ui` run started at
+  that Mac's own terminal keeps the terminal's permissions.
+- **Probe.** `host-run mac-ui probe` prints the launchd job, the process
+  chain, and whether Accessibility, Screen Recording, posting events, Input
+  Monitoring and System Events UI scripting are allowed; it exits 1 if any is
+  missing. Run it through forwarding to check what a forwarded run gets:
+  `host-run --lane=mac-ui --label=tcc-probe -- host-run mac-ui probe`.
+
+To grant, on that Mac open System Settings > Privacy & Security and, in each
+of Accessibility, Screen Recording, and Input Monitoring, click +, press
+Cmd-Shift-G, enter `~/Applications/HostRun UI.app`, and turn it on. The first
+run that scripts System Events asks for Automation; allow it, or turn on
+System Events under HostRun UI in Privacy & Security > Automation.
+
 ## Resource modes
 
 Use `shared` for one narrow check, `heavy` for production builds and ordinary

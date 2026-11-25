@@ -18,6 +18,15 @@ import { delimiter as pathDelimiter, isAbsolute, join, resolve } from "node:path
 import { pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
 
+import {
+  defaultHelperAppPath,
+  formatHelperStatus,
+  helperConfigPath,
+  inspectHelper,
+  installHelper,
+  parseHelperConfig,
+  runPermissionProbe,
+} from "./mac-ui-helper";
 import { isChromeLauncher, validateChromeExecutable } from "./chrome-launcher";
 import {
   MachineLockTimeoutError,
@@ -1480,9 +1489,28 @@ async function runLeasedCommand(
 export type HostRunCliAction =
   | { readonly kind: "help" }
   | { readonly json: boolean; readonly kind: "status" }
+  | { readonly appPath: string | null; readonly kind: "mac-ui"; readonly subcommand: MacUiSubcommand }
   | { readonly kind: "run"; readonly parsed: ReturnType<typeof parseHostRunArguments> };
 
+export type MacUiSubcommand = "install-helper" | "helper-status" | "probe";
+
 export function parseHostRunCli(arguments_: readonly string[]): HostRunCliAction {
+  if (arguments_[0] === "mac-ui") {
+    const subcommand = arguments_[1];
+    if (subcommand !== "install-helper" && subcommand !== "helper-status" && subcommand !== "probe") {
+      throw new Error("usage: host-run mac-ui install-helper [--app=PATH] | helper-status | probe");
+    }
+    let appPath: string | null = null;
+    for (const argument of arguments_.slice(2)) {
+      if (subcommand === "install-helper" && argument.startsWith("--app=") && appPath === null) {
+        appPath = argument.slice("--app=".length);
+        if (!appPath.startsWith("/") || !appPath.endsWith(".app")) throw new Error("--app must be an absolute path ending in .app");
+      } else {
+        throw new Error(`unknown host-run mac-ui ${subcommand} argument: ${argument}`);
+      }
+    }
+    return { appPath, kind: "mac-ui", subcommand };
+  }
   if (!arguments_.includes("--")) {
     if (arguments_.length === 1 && (arguments_[0] === "-h" || arguments_[0] === "--help")) {
       return { kind: "help" };
@@ -1614,12 +1642,31 @@ export function formatHostStatus(report: HostStatusReport): string {
   return lines.join("\n");
 }
 
+function runMacUiSubcommand(subcommand: MacUiSubcommand, appPath: string | null): number {
+  if (subcommand === "probe") {
+    const probe = runPermissionProbe();
+    console.log(probe.text);
+    return probe.lines.every((line) => line.granted) ? 0 : 1;
+  }
+  const configPath = helperConfigPath();
+  const configured = existsSync(configPath);
+  if (subcommand === "install-helper") {
+    installHelper({ appPath: appPath ?? defaultHelperAppPath(), configPath });
+    return 0;
+  }
+  const app = configured ? parseHelperConfig(readFileSync(configPath, "utf8"), configPath).app : defaultHelperAppPath();
+  const status = inspectHelper(app);
+  console.log(formatHelperStatus(status, configPath, configured));
+  return configured && !status.upToDate ? 1 : 0;
+}
+
 function usage(): string {
   return [
     "Usage: host-run --mode=shared|heavy|exclusive"
       + " [--lane=compute|browser|browser-auth|mac-native|mac-ui] [--label=LABEL]"
       + " [--full-cpu] [--max-hold=DURATION|none] [--artifacts=PATH ...] -- COMMAND [ARGUMENT ...]",
     "       host-run --status [--json]",
+    "       host-run mac-ui install-helper [--app=PATH] | helper-status | probe",
     "       host-run --help",
   ].join("\n");
 }
@@ -1634,6 +1681,8 @@ if (import.meta.main) {
       const report = hostStatusReport();
       console.log(action.json ? JSON.stringify(report, null, 2) : formatHostStatus(report));
       process.exitCode = 0;
+    } else if (action.kind === "mac-ui") {
+      process.exitCode = runMacUiSubcommand(action.subcommand, action.appPath);
     } else {
       process.exitCode = await runHostCommand({ ...action.parsed, cwd: process.cwd() });
     }
