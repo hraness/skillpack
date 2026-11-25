@@ -39,8 +39,8 @@ preserving sandbox, provider, repository, and release gates.
 - **Run heavyweight local work:** resolve `host-run` to its installed
   absolute path and use `ABSOLUTE-HOST-RUN
   --mode=shared|heavy|exclusive
-  --lane=compute|browser|browser-auth|mac-native --label=LABEL
-  [--max-hold=DURATION|none] [--full-cpu] -- COMMAND ...` through
+  --lane=compute|browser|browser-auth|mac-native|mac-ui --label=LABEL
+  [--max-hold=DURATION|none] [--full-cpu] [--artifacts=PATH ...] -- COMMAND ...` through
   reviewed host access. Keep the complete wrapper and child argv visible to
   Codex. Use `ABSOLUTE-HOST-RUN --status [--json]` for a read-only live holder
   and permit census without acquiring a lease.
@@ -163,12 +163,21 @@ package or command.
   `browser-auth` lane.
 - **Mac native:** Xcode, Simulator, Keychain, signed-app, or other macOS-only
   work. Keep it on a Mac and use the `mac-native` lane. The lane has two
-  slots: two `shared` or `heavy` native jobs (simulator tests, journeys,
-  Swift builds) run side by side, and `exclusive` takes both slots. Use
+  slots: two `shared` or `heavy` native jobs (Swift builds, unit tests,
+  headless simulator tests) run side by side, and `exclusive` takes both slots. Use
   `exclusive` only for work that cannot overlap another native job, such as
-  signing or packaging that touches the Keychain or a fixed device.
+  signing or packaging that touches the Keychain or a fixed device. Work that
+  shows or drives UI goes in `mac-ui` instead.
+- **Mac UI:** native work that drives or shows UI: XCUITest and other macOS
+  or iOS UI tests, native `ra walk` journeys that open windows, computer use
+  or AppleScript against our own apps, and anything that launches an app
+  window or brings Simulator.app to the front. Use `--lane=mac-ui`. The lane
+  has one slot, so UI runs never fight over focus, and a 60 min default max
+  hold. A `mac-ui` owner may run nested `mac-native` and compute steps, such
+  as the build its UI tests need. On a workstation it is forwarded to another
+  Mac; see below.
 
-The browser, browser-auth and Mac lanes bound their scarce capability while
+The browser, browser-auth, mac-native and mac-ui lanes bound their scarce capability while
 still sharing the weighted compute capacity; on those lanes `exclusive` means
 exclusive use of the capability and takes at most 2 CPU permits by default.
 For macOS-only work that needs all CPU capacity, opt in with
@@ -182,8 +191,8 @@ native owner covers ordinary or full-CPU native work and compute work. Choose
 the top-level reservation correctly instead of escalating inside a lease.
 
 Every admitted lease has a wall-clock cap: exclusive 60 min, browser 20 min,
-browser-auth 45 min (the smallest applicable wins; compute shared/heavy have
-none). host-run warns at 80%, then sends TERM and finally KILL to the leased
+browser-auth 45 min, mac-ui 60 min (the smallest applicable wins; compute
+shared/heavy have none). host-run warns at 80%, then sends TERM and finally KILL to the leased
 command only, and records outcome `hold-timeout` (exit 124). Pass
 `--max-hold=90m` (or `none`) with a reason when a run genuinely needs longer.
 A queued claim gives up after 2 h (exit 75, `QUEUE_TIMEOUT`); while it waits,
@@ -203,6 +212,60 @@ child process group and forwards `HUP`, `INT`, `QUIT`, and `TERM` to the whole
 group. An interactive TTY preserves its controlling terminal and receives
 best-effort leader signaling so an intentional 2FA prompt still works. Do not
 detach a background server from scheduler custody.
+
+## Mac UI forwarding
+
+A workstation, the Mac someone is using, never runs `mac-ui` work itself.
+On a host with `~/.config/host-run/remote.json` (or
+`$XDG_CONFIG_HOME/host-run/remote.json`):
+
+```json
+{ "macUi": { "forwardTo": "hra2" } }
+```
+
+`host-run --lane=mac-ui` forwards the run to that ssh host. Agents call it
+exactly as they would locally; nothing else changes. Without the file the
+lane runs locally, so CI and other machines are unchanged.
+
+1. It reads the Git root, HEAD and `origin` of the working directory, finds
+   the clone with the same origin under the remote `~/src`, and asks which
+   commits it already has.
+2. It sends a `git bundle` of HEAD (only the commits the remote clone
+   lacks) and a binary patch of every uncommitted change, untracked files
+   included and ignored files excluded, in one ssh stream. Nothing is pushed
+   to origin. A temporary index is used, so the local index is untouched.
+3. The remote side makes a `git clone --shared` throwaway tree under
+   `~/.local/state/host-run/remote/<id>`, checks out the commit, applies the
+   patch, and starts the same command under its own
+   `host-run --lane=mac-ui` with the same mode, label and max hold. It runs
+   as a launchd job in the user's GUI (Aqua) session, so windows, focus and
+   automation behave as they do at the console. Existing checkouts, their
+   index and their branches are never touched.
+4. stdout and stderr stream back separately, and host-run exits with the
+   remote command's exit code. `--artifacts=PATH` (repeatable, relative to the
+   repository root) copies those paths back into the local repository after
+   the run; a missing artifact is a warning.
+5. The remote tree is removed afterwards. Ctrl-C, TERM or HUP asks the remote
+   job to stop (TERM through its host-run), waits up to 2 min for its status,
+   then cleans up. A second Ctrl-C disconnects at once; the remote side then
+   stops the job itself, and removes run directories older than a day on its
+   next run.
+
+The workstation claims no local lease while a forwarded run waits or runs:
+the run uses none of its scarce capabilities, and a lease held while waiting
+on another host would block local work on external state. The receiving
+Mac's own `mac-ui` lease, queue timeout and max hold govern the run.
+
+It fails closed. If forwarding is configured but the host is unreachable, the
+repository has no clone there, the commit cannot be shipped, the user has no
+GUI session there, or the config is malformed, host-run exits 69
+(`MAC_UI_FORWARD_FAILED`) with the reason and never runs the UI work locally.
+There is no override flag; to watch a UI run on the workstation, remove the
+config file. `LOCAL_EFFICIENCY_REMOTE_CONFIG=ABSOLUTE-PATH` points at a
+different config file, which must exist. Environment variables and stdin are
+not forwarded: put needed variables in the command (`env NAME=VALUE ...`).
+Submodules are not forwarded. A run that was already forwarded refuses to
+forward again.
 
 ## Resource modes
 

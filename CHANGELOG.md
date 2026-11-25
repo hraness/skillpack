@@ -1,5 +1,18 @@
 # Changelog
 
+## local-efficiency 0.6.0 - 2026-11-25
+
+- Add a one-slot `mac-ui` host-run lane for Mac work that drives or shows UI:
+  UI tests, native journeys that open windows, computer use or AppleScript
+  against our own apps, and Simulator.app in front.
+- On a Mac with `~/.config/host-run/remote.json`, send `mac-ui` runs to the
+  configured Mac over ssh. The commit and uncommitted changes go along, the
+  command runs in that Mac's desktop session in a throwaway checkout, output
+  and the exit code come back, and `--artifacts=PATH` copies results home.
+  Ctrl-C stops the remote run. Without the file the lane runs locally.
+- Forwarding fails closed with exit 69 when the other Mac or its clone is
+  unavailable. UI work never falls back to the local Mac.
+
 ## 0.2.2 - 2026-09-16
 
 - Add optional general Hraness development support to original distribution

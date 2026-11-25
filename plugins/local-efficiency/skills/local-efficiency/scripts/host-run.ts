@@ -19,6 +19,14 @@ import { pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
 
 import { isChromeLauncher, validateChromeExecutable } from "./chrome-launcher";
+import {
+  ForwardUnavailableError,
+  defaultForwardDependencies,
+  forwardMacUiRun,
+  forwardUnavailableExitCode,
+  resolveRemoteForwardConfig,
+  validateArtifactPath,
+} from "./mac-ui-forward";
 
 import {
   commandProgramLabel,
@@ -36,18 +44,19 @@ import {
 } from "./telemetry";
 
 export type ResourceMode = "shared" | "heavy" | "exclusive";
-export type CapabilityLane = "compute" | "browser" | "browser-auth" | "mac-native";
+export type CapabilityLane = "compute" | "browser" | "browser-auth" | "mac-native" | "mac-ui";
 
 export const capabilityLanes: readonly CapabilityLane[] = [
   "compute",
   "browser",
   "browser-auth",
   "mac-native",
+  "mac-ui",
 ];
 
 export function isCapabilityLane(value: unknown): value is CapabilityLane {
   return value === "compute" || value === "browser" || value === "browser-auth"
-    || value === "mac-native";
+    || value === "mac-native" || value === "mac-ui";
 }
 
 /** Capability profile. v2 adds the headless `browser` lane (4 slots). */
@@ -83,6 +92,20 @@ export const macNativeProfile = Object.freeze({
   ]),
 });
 
+/**
+ * The mac-ui lane is for native work that drives or shows UI: XCUITest and
+ * other UI tests, window-opening journeys, computer use or AppleScript against
+ * our own apps, and anything that brings an app window or Simulator.app to the
+ * front. One slot, so UI runs never fight over focus. On a workstation with a
+ * forwarding config the lane never runs locally (see mac-ui-forward.ts).
+ */
+export const macUiProfile = Object.freeze({
+  id: "local-efficiency/mac-ui-v1",
+  capacities: Object.freeze([
+    Object.freeze({ resource: "mac-ui", limit: 1 }),
+  ]),
+});
+
 /** Slots a mac-native run claims: exclusive takes the whole lane. */
 export function macNativeClaimAmount(mode: ResourceMode): number {
   return mode === "exclusive" ? macNativeProfile.capacities[0]!.limit : 1;
@@ -110,6 +133,7 @@ export function defaultMaxHoldMilliseconds(
   if (mode === "exclusive") candidates.push(60 * minuteMilliseconds);
   if (lane === "browser") candidates.push(20 * minuteMilliseconds);
   if (lane === "browser-auth") candidates.push(45 * minuteMilliseconds);
+  if (lane === "mac-ui") candidates.push(60 * minuteMilliseconds);
   return candidates.length === 0 ? null : Math.min(...candidates);
 }
 
@@ -181,6 +205,8 @@ type HostResourceModule = {
 };
 
 export type HostRunOptions = {
+  /** mac-ui only: repo-relative paths copied back from a forwarded run. */
+  readonly artifacts?: readonly string[];
   readonly command: readonly string[];
   readonly cwd: string;
   readonly environment?: Readonly<NodeJS.ProcessEnv>;
@@ -312,6 +338,7 @@ export function chromeEnvironment(
 }
 
 export function parseHostRunArguments(arguments_: readonly string[]): {
+  readonly artifacts?: readonly string[];
   readonly command: readonly string[];
   readonly label: string;
   readonly lane: CapabilityLane;
@@ -328,7 +355,12 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
   let maxHold: number | null | undefined;
   let maxHoldSupplied = false;
   let fullCpu = false;
+  const artifacts: string[] = [];
   for (const argument of arguments_.slice(0, delimiter)) {
+    if (argument.startsWith("--artifacts=")) {
+      artifacts.push(validateArtifactPath(argument.slice("--artifacts=".length)));
+      continue;
+    }
     if (argument === "--full-cpu") {
       if (fullCpu) throw new Error("--full-cpu may appear only once");
       fullCpu = true;
@@ -374,7 +406,11 @@ export function parseHostRunArguments(arguments_: readonly string[]): {
     throw new Error("command program must contain no control characters");
   }
   validateFullCpu(mode ?? "shared", lane, fullCpu);
+  if (artifacts.length > 0 && lane !== "mac-ui") {
+    throw new Error("--artifacts is only valid with --lane=mac-ui");
+  }
   return {
+    ...(artifacts.length > 0 ? { artifacts: [...new Set(artifacts)] } : {}),
     command,
     ...(fullCpu ? { fullCpu: true } : {}),
     label: label ?? commandProgramLabel(command[0]),
@@ -409,6 +445,10 @@ export function resolveCapabilityStateRoot(hostResourceStateRoot: string): strin
 
 export function resolveMacNativeStateRoot(hostResourceStateRoot: string): string {
   return join(resolve(hostResourceStateRoot, ".."), "mac-native-v1");
+}
+
+export function resolveMacUiStateRoot(hostResourceStateRoot: string): string {
+  return join(resolve(hostResourceStateRoot, ".."), "mac-ui-v1");
 }
 
 /**
@@ -818,6 +858,9 @@ function assertInheritedLeaseDescriptors(inherited: InheritedLease): void {
       },
     ]);
     descriptor += 1;
+  } else if (inherited.lane === "mac-ui") {
+    assertMarker(descriptor, [expectedProfileDigest(macUiProfile)], [{ resource: "mac-ui", amount: 1 }]);
+    descriptor += 1;
   } else if (inherited.lane !== "compute") {
     assertMarker(
       descriptor,
@@ -852,10 +895,12 @@ export function inheritedLeaseCovers(
   inherited: InheritedLease,
   requested: Pick<HostRunOptions, "lane" | "mode" | "fullCpu">,
 ): boolean {
-  // The signed-in browser owner may also drive headless browsers.
+  // The signed-in browser owner may also drive headless browsers, and the
+  // mac-ui owner may run the native builds its UI tests need.
   const capabilityCovered = requested.lane === "compute"
     || inherited.lane === requested.lane
-    || (requested.lane === "browser" && inherited.lane === "browser-auth");
+    || (requested.lane === "browser" && inherited.lane === "browser-auth")
+    || (requested.lane === "mac-native" && inherited.lane === "mac-ui");
   return capabilityCovered
     && modeRank(inherited.mode) >= modeRank(requested.mode)
     && expectedPermits(requested.mode, inherited.capacity, requested.lane, requested.fullCpu) <= inherited.permits;
@@ -884,7 +929,7 @@ export function capabilityPlatformSupported(
   lane: CapabilityLane,
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  return lane !== "mac-native" || platform === "darwin";
+  return (lane !== "mac-native" && lane !== "mac-ui") || platform === "darwin";
 }
 
 export type ProcessStartIdentity = {
@@ -1164,8 +1209,25 @@ export class QueueTimeoutError extends Error {
 export async function runHostCommand(options: HostRunOptions): Promise<number> {
   validateFullCpu(options.mode, options.lane, options.fullCpu);
   const environment = { ...(options.environment ?? process.env) };
+  if (options.artifacts !== undefined && options.artifacts.length > 0 && options.lane !== "mac-ui") {
+    throw new Error("--artifacts is only valid with --lane=mac-ui");
+  }
+  if (options.lane === "mac-ui") {
+    // A workstation never runs UI-driving work itself: forward it, or fail.
+    const forward = resolveRemoteForwardConfig(environment);
+    if (forward !== null) {
+      return await forwardMacUiRun({
+        artifacts: options.artifacts ?? [],
+        command: options.command,
+        cwd: options.cwd,
+        label: options.label,
+        ...(options.maxHoldMilliseconds === undefined ? {} : { maxHoldMilliseconds: options.maxHoldMilliseconds }),
+        mode: options.mode,
+      }, forward, defaultForwardDependencies(environment));
+    }
+  }
   if (!capabilityPlatformSupported(options.lane)) {
-    throw new Error("the mac-native capability lane requires macOS");
+    throw new Error(`the ${options.lane} capability lane requires macOS`);
   }
   const inheritedValue = environment.LOCAL_EFFICIENCY_LEASE;
   if (inheritedValue !== undefined) {
@@ -1267,7 +1329,11 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
       stateRoot: resolveCpuStateRoot(stateRoot, capacity),
       waitTimeoutMilliseconds: queueTimeoutMilliseconds,
     });
-    const laneProfile = options.lane === "mac-native" ? macNativeProfile : capabilityProfile;
+    const laneProfile = options.lane === "mac-native"
+      ? macNativeProfile
+      : options.lane === "mac-ui"
+        ? macUiProfile
+        : capabilityProfile;
     const capabilityCoordinator = options.lane === "compute"
       ? null
       : module.createHostResourceCoordinator({
@@ -1277,7 +1343,9 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
         },
         stateRoot: options.lane === "mac-native"
           ? resolveMacNativeStateRoot(stateRoot)
-          : resolveCapabilityStateRoot(stateRoot),
+          : options.lane === "mac-ui"
+            ? resolveMacUiStateRoot(stateRoot)
+            : resolveCapabilityStateRoot(stateRoot),
         waitTimeoutMilliseconds: queueTimeoutMilliseconds,
       });
     if (cancellationState.signal !== null) return signalExitCode(cancellationState.signal);
@@ -1466,6 +1534,7 @@ export function hostStatusReport(options: {
     ["compute", null],
     ...capabilityProfile.capacities.map((entry) => [entry.resource as CapabilityLane, entry.limit] as const),
     ...macNativeProfile.capacities.map((entry) => [entry.resource as CapabilityLane, entry.limit] as const),
+    ...macUiProfile.capacities.map((entry) => [entry.resource as CapabilityLane, entry.limit] as const),
   ]);
   const lanes: HostStatusLaneSummary[] = capabilityLanes.map((resource) => ({
     activeCount: holders.filter((holder) => holder.lane === resource).length,
@@ -1508,8 +1577,8 @@ export function formatHostStatus(report: HostStatusReport): string {
 function usage(): string {
   return [
     "Usage: host-run --mode=shared|heavy|exclusive"
-      + " [--lane=compute|browser|browser-auth|mac-native] [--label=LABEL]"
-      + " [--full-cpu] [--max-hold=DURATION|none] -- COMMAND [ARGUMENT ...]",
+      + " [--lane=compute|browser|browser-auth|mac-native|mac-ui] [--label=LABEL]"
+      + " [--full-cpu] [--max-hold=DURATION|none] [--artifacts=PATH ...] -- COMMAND [ARGUMENT ...]",
     "       host-run --status [--json]",
     "       host-run --help",
   ].join("\n");
@@ -1532,6 +1601,9 @@ if (import.meta.main) {
     if (error instanceof HostAccessRequiredError) {
       console.error(`[host-run] ${error.code}: ${error.message}`);
       process.exitCode = hostAccessRequiredExitCode;
+    } else if (error instanceof ForwardUnavailableError) {
+      console.error(`[host-run] ${error.code}: ${error.message}`);
+      process.exitCode = forwardUnavailableExitCode;
     } else if (error instanceof QueueTimeoutError) {
       console.error(`[host-run] QUEUE_TIMEOUT: ${error.message}`);
       process.exitCode = queueTimeoutExitCode;
