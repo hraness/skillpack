@@ -163,6 +163,7 @@ export function validateThroughputEvent(value: unknown): ThroughputEvent {
     && record.capability !== "browser"
     && record.capability !== "browser-auth"
     && record.capability !== "mac-native"
+    && record.capability !== "mac-ui"
   ) throw new Error("throughput event capability is invalid");
   if (record.mode !== "shared" && record.mode !== "heavy" && record.mode !== "exclusive") {
     throw new Error("throughput event mode is invalid");

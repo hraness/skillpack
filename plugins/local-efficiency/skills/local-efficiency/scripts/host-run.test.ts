@@ -18,7 +18,9 @@ import {
   capabilityProfile,
   macNativeClaimAmount,
   macNativeProfile,
+  macUiProfile,
   resolveMacNativeStateRoot,
+  resolveMacUiStateRoot,
   chromeEnvironment,
   defaultMaxHoldMilliseconds,
   describeHolders,
@@ -720,6 +722,60 @@ describe("host-wide resource wrapper", () => {
       .toBe("/opt/tester/.local/state/local-efficiency/mac-native-v1");
   });
 
+  test("defines a one-slot mac-ui lane with its own pool, a 60 min default hold and macOS-only local runs", () => {
+    expect(macUiProfile).toEqual({ id: "local-efficiency/mac-ui-v1", capacities: [{ resource: "mac-ui", limit: 1 }] });
+    expect(resolveMacUiStateRoot("/opt/tester/.local/state/local-efficiency/host-resources-v1"))
+      .toBe("/opt/tester/.local/state/local-efficiency/mac-ui-v1");
+    expect(parseHostRunArguments(["--lane=mac-ui", "--mode=heavy", "--label=ui", "--", "xcodebuild", "test"])).toEqual({
+      command: ["xcodebuild", "test"],
+      label: "ui",
+      lane: "mac-ui",
+      mode: "heavy",
+    });
+    expect(defaultMaxHoldMilliseconds("mac-ui", "shared")).toBe(60 * 60_000);
+    expect(defaultMaxHoldMilliseconds("mac-ui", "exclusive")).toBe(60 * 60_000);
+    expect(permitsForMode("exclusive", 18, "mac-ui")).toBe(2);
+    expect(() => permitsForMode("exclusive", 18, "mac-ui", true)).toThrow("--full-cpu requires");
+    expect(capabilityPlatformSupported("mac-ui", "darwin")).toBe(true);
+    expect(capabilityPlatformSupported("mac-ui", "linux")).toBe(false);
+  });
+
+  test("a mac-ui owner covers nested native and compute work, but not the reverse", () => {
+    const ui = { capacity: 6, lane: "mac-ui" as const, mode: "heavy" as const, permits: 2 };
+    expect(parseInheritedLease(JSON.stringify({ ...ui, label: "ui", version: 2 }))).toEqual(ui);
+    expect(inheritedLeaseCovers(ui, { lane: "mac-ui", mode: "shared" })).toBe(true);
+    expect(inheritedLeaseCovers(ui, { lane: "mac-native", mode: "heavy" })).toBe(true);
+    expect(inheritedLeaseCovers(ui, { lane: "compute", mode: "shared" })).toBe(true);
+    expect(inheritedLeaseCovers(ui, { lane: "browser", mode: "shared" })).toBe(false);
+    expect(inheritedLeaseCovers({ ...ui, lane: "mac-native" }, { lane: "mac-ui", mode: "shared" })).toBe(false);
+  });
+
+  test("runs mac-ui locally from its one-slot pool when no forwarding config exists", () => {
+    if (process.platform !== "darwin") return;
+    const root = mkdtempSync(join(tmpdir(), "le-mac-ui-local-"));
+    try {
+      const log = join(root, "claims.log");
+      const childMarker = join(root, "child-ran");
+      const result = Bun.spawnSync({
+        cmd: [process.execPath, join(import.meta.dir, "host-run.ts"), "--mode=exclusive", "--lane=mac-ui", "--label=ui", "--",
+          process.execPath, "-e", `await Bun.write(${JSON.stringify(childMarker)}, process.env.LOCAL_EFFICIENCY_LEASE)`],
+        cwd: root,
+        env: { ...cleanEnvironment(), ATET_HOST_RESOURCES_MODULE: passThroughModule(root, log),
+          LOCAL_EFFICIENCY_STATE_ROOT: join(root, "state", "host-resources-v1"), LOCAL_EFFICIENCY_TELEMETRY: "off",
+          XDG_CONFIG_HOME: join(root, "no-config") },
+        stderr: "pipe", stdout: "pipe",
+      });
+      expect(result.exitCode, result.stderr.toString()).toBe(0);
+      expect(JSON.parse(readFileSync(childMarker, "utf8"))).toMatchObject({ lane: "mac-ui", mode: "exclusive", permits: 2 });
+      const entries = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      expect(entries[0].profile.id).toBe("local-efficiency/mac-ui-v1");
+      expect(entries[0].stateRoot).toBe(join(root, "state", "mac-ui-v1"));
+      expect(entries[0].claims).toEqual([{ resource: "mac-ui", amount: 1 }]);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
   test("defines capabilities-v2 with a four-slot headless browser lane", () => {
     expect(capabilityProfile.id).toBe("local-efficiency/capabilities-v2");
     expect(capabilityProfile.capacities).toEqual([
@@ -1360,6 +1416,8 @@ describe("host-wide resource wrapper", () => {
       });
       const text = formatHostStatus(report);
       expect(text).toContain("CAPACITY\tcpu=2/6\tavailable=4\tcores=16");
+      expect(text).toContain("LANE\tmac-native\tactive=0\tlimit=2");
+      expect(text).toContain("LANE\tmac-ui\tactive=0\tlimit=1");
       expect(text).toContain("HOLDER\tpid=101\tlane=compute\tmode=heavy\tpermits=2\theld=1m35s\tlabel=repo-check");
 
       const helpResult = Bun.spawnSync({
