@@ -1,5 +1,6 @@
 /**
- * Forwarding for the `mac-ui` lane. On a workstation that is configured to
+ * Forwarding for the `mac-ui` lane (heavy compute reuses it; see
+ * compute-forward.ts). On a workstation that is configured to
  * forward (for example the owner's own Mac), UI-driving native work never runs
  * locally: host-run ships the current commit and uncommitted changes to the
  * configured Mac over ssh, runs the same command there under that host's
@@ -58,8 +59,28 @@ export class ForwardUnavailableError extends Error {
 export type RemoteForwardConfig = {
   readonly forwardTo: string;
   readonly remoteHostRun: string;
+  /** Largest one-time full bundle sent to seed a repository the remote lacks. */
+  readonly seedMaxBytes?: number;
   readonly source: string;
 };
+
+/** Heavy compute forwarding: `{ "compute": { "forwardTo": "hra2", "modes": ["heavy", "exclusive"] } }`. */
+export type ComputeForwardConfig = RemoteForwardConfig & {
+  /** Upper bound on all cached compute workspaces on the remote, GiB. */
+  readonly cacheGiB: number;
+  /** Evict idle cached workspaces while the remote disk has less free space than this, GiB. */
+  readonly minFreeGiB: number;
+  readonly modes: readonly ("heavy" | "exclusive")[];
+  /** Cached workspaces per repository; concurrent runs beyond this wait. */
+  readonly slots: number;
+};
+
+export type RemoteConfigs = {
+  readonly compute: ComputeForwardConfig | null;
+  readonly macUi: RemoteForwardConfig | null;
+};
+
+export const defaultSeedMaxMiB = 2048;
 
 /** `$XDG_CONFIG_HOME/host-run/remote.json`, else `~/.config/host-run/remote.json`. */
 export function remoteConfigPath(
@@ -76,13 +97,58 @@ export function remoteConfigPath(
 
 const sshHostPattern = /^[A-Za-z0-9_][A-Za-z0-9._@-]{0,252}$/u;
 
+function parseForwardTarget(
+  value: unknown,
+  key: string,
+  source: string,
+  extraKeys: readonly string[],
+): { readonly entry: Record<string, unknown>; readonly target: RemoteForwardConfig } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${source}: ${key} must be an object`);
+  }
+  const entry = value as Record<string, unknown>;
+  for (const name of Object.keys(entry)) {
+    if (name !== "forwardTo" && name !== "remoteHostRun" && name !== "seedMaxMiB" && !extraKeys.includes(name)) {
+      throw new Error(`${source}: ${key} has an unknown key: ${name}`);
+    }
+  }
+  if (typeof entry.forwardTo !== "string" || !sshHostPattern.test(entry.forwardTo)) {
+    throw new Error(`${source}: ${key}.forwardTo must be an ssh host name or alias`);
+  }
+  let remoteHostRun = "host-run";
+  if (entry.remoteHostRun !== undefined) {
+    if (
+      typeof entry.remoteHostRun !== "string"
+      || !(entry.remoteHostRun === "host-run" || (isAbsolute(entry.remoteHostRun) && normalize(entry.remoteHostRun) === entry.remoteHostRun))
+      || /[\0-\x1f\x7f]/u.test(entry.remoteHostRun)
+    ) {
+      throw new Error(`${source}: ${key}.remoteHostRun must be "host-run" or a normalized absolute path`);
+    }
+    remoteHostRun = entry.remoteHostRun;
+  }
+  const seedMaxMiB = boundedInteger(entry.seedMaxMiB, defaultSeedMaxMiB, `${key}.seedMaxMiB`, source, 0, 16_384);
+  return {
+    entry,
+    target: { forwardTo: entry.forwardTo, remoteHostRun, seedMaxBytes: seedMaxMiB * 1_048_576, source },
+  };
+}
+
+function boundedInteger(value: unknown, fallback: number, name: string, source: string, min: number, max: number): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${source}: ${name} must be an integer from ${min} to ${max}`);
+  }
+  return value;
+}
+
 /**
- * Parses `{ "macUi": { "forwardTo": "hra2" } }`. `remoteHostRun` (optional)
- * names the remote command; it defaults to `host-run` on the remote PATH.
- * Unknown keys and malformed values fail, so a typo never silently means
- * "run UI tests here".
+ * Parses remote.json: `macUi` (UI-driving work, always forwarded) and
+ * `compute` (heavy builds, forwarded when possible, else run here).
+ * `remoteHostRun` (optional) names the remote command; it defaults to
+ * `host-run` on the remote PATH. Unknown keys and malformed values fail, so a
+ * typo never silently changes where work runs.
  */
-export function parseRemoteForwardConfig(text: string, source = "remote.json"): RemoteForwardConfig | null {
+export function parseRemoteConfigs(text: string, source = "remote.json"): RemoteConfigs {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text) as unknown;
@@ -94,34 +160,37 @@ export function parseRemoteForwardConfig(text: string, source = "remote.json"): 
   }
   const root = parsed as Record<string, unknown>;
   for (const key of Object.keys(root)) {
-    if (key !== "macUi") throw new Error(`${source} has an unknown key: ${key}`);
+    if (key !== "macUi" && key !== "compute") throw new Error(`${source} has an unknown key: ${key}`);
   }
-  if (root.macUi === undefined) return null;
-  const macUi = root.macUi;
-  if (typeof macUi !== "object" || macUi === null || Array.isArray(macUi)) {
-    throw new Error(`${source}: macUi must be an object`);
-  }
-  const entry = macUi as Record<string, unknown>;
-  for (const key of Object.keys(entry)) {
-    if (key !== "forwardTo" && key !== "remoteHostRun") {
-      throw new Error(`${source}: macUi has an unknown key: ${key}`);
+  const macUi = root.macUi === undefined ? null : parseForwardTarget(root.macUi, "macUi", source, []).target;
+  let compute: ComputeForwardConfig | null = null;
+  if (root.compute !== undefined) {
+    const { entry, target } = parseForwardTarget(root.compute, "compute", source, ["modes", "cacheGiB", "minFreeGiB", "slots"]);
+    let modes: ("heavy" | "exclusive")[] = ["heavy", "exclusive"];
+    if (entry.modes !== undefined) {
+      const value = entry.modes;
+      if (
+        !Array.isArray(value) || value.length === 0
+        || !value.every((mode) => mode === "heavy" || mode === "exclusive")
+      ) {
+        throw new Error(`${source}: compute.modes must be a non-empty list of "heavy" and "exclusive"`);
+      }
+      modes = [...new Set(value as ("heavy" | "exclusive")[])];
     }
+    compute = {
+      ...target,
+      cacheGiB: boundedInteger(entry.cacheGiB, 80, "compute.cacheGiB", source, 1, 4096),
+      minFreeGiB: boundedInteger(entry.minFreeGiB, 60, "compute.minFreeGiB", source, 1, 4096),
+      modes,
+      slots: boundedInteger(entry.slots, 2, "compute.slots", source, 1, 8),
+    };
   }
-  if (typeof entry.forwardTo !== "string" || !sshHostPattern.test(entry.forwardTo)) {
-    throw new Error(`${source}: macUi.forwardTo must be an ssh host name or alias`);
-  }
-  let remoteHostRun = "host-run";
-  if (entry.remoteHostRun !== undefined) {
-    if (
-      typeof entry.remoteHostRun !== "string"
-      || !(entry.remoteHostRun === "host-run" || (isAbsolute(entry.remoteHostRun) && normalize(entry.remoteHostRun) === entry.remoteHostRun))
-      || /[\0-\x1f\x7f]/u.test(entry.remoteHostRun)
-    ) {
-      throw new Error(`${source}: macUi.remoteHostRun must be "host-run" or a normalized absolute path`);
-    }
-    remoteHostRun = entry.remoteHostRun;
-  }
-  return { forwardTo: entry.forwardTo, remoteHostRun, source };
+  return { compute, macUi };
+}
+
+/** The `macUi` entry of remote.json, or null. */
+export function parseRemoteForwardConfig(text: string, source = "remote.json"): RemoteForwardConfig | null {
+  return parseRemoteConfigs(text, source).macUi;
 }
 
 /**
@@ -134,6 +203,14 @@ export function resolveRemoteForwardConfig(
   environment: Readonly<NodeJS.ProcessEnv> = process.env,
   userHome = homedir(),
 ): RemoteForwardConfig | null {
+  return resolveRemoteConfigs(environment, userHome).macUi;
+}
+
+/** Both remote.json entries; an absent default file means neither. */
+export function resolveRemoteConfigs(
+  environment: Readonly<NodeJS.ProcessEnv> = process.env,
+  userHome = homedir(),
+): RemoteConfigs {
   const explicit = environment.LOCAL_EFFICIENCY_REMOTE_CONFIG;
   if (explicit !== undefined && explicit !== "" && !isAbsolute(explicit)) {
     throw new Error("LOCAL_EFFICIENCY_REMOTE_CONFIG must be absolute");
@@ -146,10 +223,10 @@ export function resolveRemoteForwardConfig(
     if (
       typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"
       && (explicit === undefined || explicit === "")
-    ) return null;
+    ) return { compute: null, macUi: null };
     throw new Error(`cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`);
   }
-  return parseRemoteForwardConfig(text, path);
+  return parseRemoteConfigs(text, path);
 }
 
 /** Validates an `--artifacts` path: relative to the repo root, no `..`. */
@@ -178,7 +255,8 @@ export function normalizeOriginUrl(url: string): string {
   return value.toLowerCase();
 }
 
-export type RemoteRepository = { readonly kind: "dir" | "file"; readonly origin: string; readonly path: string };
+/** `dir`/`file`: a checkout under ~/src. `seed`: a bare repository host-run seeded into its own state. */
+export type RemoteRepository = { readonly kind: "dir" | "file" | "seed"; readonly origin: string; readonly path: string };
 
 export function parseRemoteRepositoryList(output: string): RemoteRepository[] {
   const repositories: RemoteRepository[] = [];
@@ -186,7 +264,7 @@ export function parseRemoteRepositoryList(output: string): RemoteRepository[] {
     if (line.trim() === "") continue;
     const [kind, path, ...rest] = line.split("\t");
     const origin = rest.join("\t");
-    if ((kind !== "dir" && kind !== "file") || path === undefined || path === "" || origin === "") continue;
+    if ((kind !== "dir" && kind !== "file" && kind !== "seed") || path === undefined || path === "" || origin === "") continue;
     repositories.push({ kind, origin, path });
   }
   return repositories;
@@ -194,7 +272,8 @@ export function parseRemoteRepositoryList(output: string): RemoteRepository[] {
 
 /**
  * Picks the remote clone of the same origin: prefer a directory named like the
- * repository, then a primary checkout (`.git` directory), then path order.
+ * repository, then a primary checkout (`.git` directory), then path order. A
+ * seeded repository is used only when ~/src has no clone.
  */
 export function selectRemoteRepository(
   repositories: readonly RemoteRepository[],
@@ -204,7 +283,7 @@ export function selectRemoteRepository(
   const name = wanted.split("/").at(-1) ?? "";
   const matches = repositories.filter((entry) => normalizeOriginUrl(entry.origin) === wanted);
   const score = (entry: RemoteRepository): number =>
-    (basename(entry.path).toLowerCase() === name ? 0 : 2) + (entry.kind === "dir" ? 0 : 1);
+    entry.kind === "seed" ? 4 : (basename(entry.path).toLowerCase() === name ? 0 : 2) + (entry.kind === "dir" ? 0 : 1);
   return [...matches].sort((left, right) => score(left) - score(right) || left.path.localeCompare(right.path))[0] ?? null;
 }
 
@@ -244,11 +323,11 @@ export type ForwardRequest = {
   readonly mode: "shared" | "heavy" | "exclusive";
 };
 
-/** The remote host-run argv: same mode, label and max hold, always the mac-ui lane. */
-export function remoteHostRunArguments(request: ForwardRequest): string[] {
+/** The remote host-run argv: same mode, label and max hold, on the forwarded lane. */
+export function remoteHostRunArguments(request: ForwardRequest, lane: "mac-ui" | "compute" = "mac-ui"): string[] {
   return [
     `--mode=${request.mode}`,
-    "--lane=mac-ui",
+    `--lane=${lane}`,
     `--label=${request.label}`,
     ...(request.maxHoldMilliseconds === undefined
       ? []
@@ -273,7 +352,7 @@ export function newForwardId(now = new Date()): string {
   return `${stamp}-${randomBytes(4).toString("hex")}`;
 }
 
-type RunResult = { readonly status: number | null; readonly stdout: Buffer; readonly stderr: string };
+export type RunResult = { readonly status: number | null; readonly stdout: Buffer; readonly stderr: string };
 
 export type ForwardDependencies = {
   /** Runs a short command to completion. */
@@ -312,18 +391,18 @@ export function defaultForwardDependencies(environment: Readonly<NodeJS.ProcessE
   };
 }
 
-function lastLines(text: string, count = 3): string {
+export function lastLines(text: string, count = 3): string {
   return text.trim().split("\n").slice(-count).join(" | ");
 }
 
-type LocalRepository = {
+export type LocalRepository = {
   readonly head: string;
   readonly origin: string;
   readonly prefix: string;
   readonly root: string;
 };
 
-function git(
+export function git(
   deps: ForwardDependencies,
   cwd: string,
   arguments_: readonly string[],
@@ -344,11 +423,11 @@ function gitText(deps: ForwardDependencies, cwd: string, arguments_: readonly st
   return result.stdout.toString("utf8").replace(/\n$/u, "");
 }
 
-export function inspectLocalRepository(deps: ForwardDependencies, cwd: string): LocalRepository {
-  const root = gitText(deps, cwd, ["rev-parse", "--show-toplevel"], "mac-ui forwarding needs a Git repository");
+export function inspectLocalRepository(deps: ForwardDependencies, cwd: string, lane = "mac-ui"): LocalRepository {
+  const root = gitText(deps, cwd, ["rev-parse", "--show-toplevel"], `${lane} forwarding needs a Git repository`);
   const prefix = gitText(deps, cwd, ["rev-parse", "--show-prefix"], "cannot resolve the working directory inside the repository");
   const head = gitText(deps, cwd, ["rev-parse", "--verify", "HEAD^{commit}"], "the repository has no commit to forward");
-  const origin = gitText(deps, cwd, ["remote", "get-url", "origin"], "mac-ui forwarding needs an origin remote to find the same repository on the remote Mac");
+  const origin = gitText(deps, cwd, ["remote", "get-url", "origin"], `${lane} forwarding needs an origin remote to find the same repository on the remote Mac`);
   return { head, origin, prefix: prefix.replace(/\/$/u, ""), root };
 }
 
@@ -370,7 +449,7 @@ export function workingTreePatch(deps: ForwardDependencies, root: string, scratc
   return diff.stdout;
 }
 
-function remoteCall(
+export function remoteCall(
   deps: ForwardDependencies,
   config: RemoteForwardConfig,
   script: string,
@@ -384,11 +463,20 @@ function remoteCall(
   });
 }
 
-function unreachable(config: RemoteForwardConfig, result: RunResult): ForwardUnavailableError {
-  return new ForwardUnavailableError(
-    `cannot reach ${config.forwardTo} over ssh to run mac-ui work (${lastLines(result.stderr) || `exit ${result.status ?? "timeout"}`}).`
-    + ` UI-driving tests never run on this workstation; fix the connection, or remove ${config.source} to run them here`,
-  );
+function unreachable(config: RemoteForwardConfig, result: RunResult, lane: string): ForwardUnavailableError {
+  const reason = `cannot reach ${config.forwardTo} over ssh (${lastLines(result.stderr) || `exit ${result.status ?? "timeout"}`})`;
+  return new ForwardUnavailableError(lane === "mac-ui"
+    ? `cannot reach ${config.forwardTo} over ssh to run mac-ui work (${lastLines(result.stderr) || `exit ${result.status ?? "timeout"}`}).`
+      + ` UI-driving tests never run on this workstation; fix the connection, or remove ${config.source} to run them here`
+    : reason);
+}
+
+/** planForward found no clone of the repository on the remote. */
+export class NoRemoteCloneError extends ForwardUnavailableError {
+  constructor(message: string, readonly local: LocalRepository) {
+    super(message);
+    this.name = "NoRemoteCloneError";
+  }
 }
 
 export type ForwardPlan = {
@@ -404,15 +492,17 @@ export function planForward(
   config: RemoteForwardConfig,
   script: string,
   cwd: string,
+  lane = "mac-ui",
 ): ForwardPlan {
-  const local = inspectLocalRepository(deps, cwd);
+  const local = inspectLocalRepository(deps, cwd, lane);
   const listed = remoteCall(deps, config, script, "list", []);
-  if (listed.status !== 0) throw unreachable(config, listed);
+  if (listed.status !== 0) throw unreachable(config, listed, lane);
   const repository = selectRemoteRepository(parseRemoteRepositoryList(listed.stdout.toString("utf8")), local.origin);
   if (repository === null) {
-    throw new ForwardUnavailableError(
-      `${config.forwardTo} has no clone of ${normalizeOriginUrl(local.origin)} under ~/src;`
-      + ` clone it there first (host-run never runs mac-ui work on this workstation)`,
+    throw new NoRemoteCloneError(
+      `${config.forwardTo} has no clone of ${normalizeOriginUrl(local.origin)} under ~/src`
+      + (lane === "mac-ui" ? "; clone it there first (host-run never runs mac-ui work on this workstation)" : ""),
+      local,
     );
   }
   const refs = git(deps, local.root, [
@@ -423,7 +513,7 @@ export function planForward(
     ...(refs.status === 0 ? refs.stdout.toString("utf8").split("\n").filter((line) => /^[0-9a-f]{40,64}$/u.test(line)) : []),
   ])];
   const have = remoteCall(deps, config, script, "have", [repository.path, ...candidates]);
-  if (have.status !== 0) throw unreachable(config, have);
+  if (have.status !== 0) throw unreachable(config, have, lane);
   const haves = have.stdout.toString("utf8").split("\n").filter((line) => candidates.includes(line));
   return {
     bundleNeeded: !haves.includes(local.head),
@@ -431,6 +521,99 @@ export function planForward(
     local,
     remoteRepository: repository.path,
   };
+}
+
+/** `https://user:token@host/o/r` -> `https://host/o/r`; scp-style `git@host:o/r` is kept. */
+export function originWithoutCredentials(url: string): string {
+  return url.trim().replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/iu, "$1");
+}
+
+/** Directory name for a repository in the remote's host-run state: `github.com-o-r`. */
+export function repositoryKey(origin: string): string {
+  const key = normalizeOriginUrl(origin).replace(/[^a-z0-9._-]+/gu, "-").replace(/^[.-]+/u, "").slice(0, 120);
+  if (key === "") throw new ForwardUnavailableError(`cannot derive a repository name from origin ${origin}`);
+  return key;
+}
+
+/**
+ * Sends a full bundle of the local repository (HEAD, branches, tags and
+ * remote-tracking refs) once, so a remote without the repository under ~/src
+ * gets a bare copy in ~/.local/state/host-run/seed. Only Git objects and refs
+ * travel: no config, no hooks, and the origin URL loses any embedded
+ * credentials. Later runs send only the commits that copy lacks.
+ */
+export function seedRemoteRepository(
+  deps: ForwardDependencies,
+  config: RemoteForwardConfig,
+  script: string,
+  local: LocalRepository,
+): void {
+  const limit = config.seedMaxBytes ?? defaultSeedMaxMiB * 1_048_576;
+  const name = normalizeOriginUrl(local.origin);
+  if (limit === 0) {
+    throw new ForwardUnavailableError(`${config.forwardTo} has no clone of ${name}, and seeding is off (seedMaxMiB is 0 in ${config.source})`);
+  }
+  const scratch = mkdtempSync(join(tmpdir(), "host-run-seed-"));
+  try {
+    const bundlePath = join(scratch, "seed.bundle");
+    const startedAt = Date.now();
+    const bundle = deps.run(["git", "bundle", "create", "--quiet", bundlePath, "HEAD", "--branches", "--tags", "--remotes"], {
+      cwd: local.root,
+      env: { ...deps.environment },
+      timeoutMs: 30 * 60_000,
+    });
+    if (bundle.status !== 0) throw new ForwardUnavailableError(`could not bundle ${name} to seed ${config.forwardTo}: ${lastLines(bundle.stderr)}`);
+    const size = statSync(bundlePath).size;
+    const mib = Math.max(1, Math.round(size / 1_048_576));
+    if (size > limit) {
+      throw new ForwardUnavailableError(
+        `${config.forwardTo} has no clone of ${name}, and a full copy is ${mib} MiB (seed limit ${Math.round(limit / 1_048_576)} MiB);`
+        + ` clone it under ~/src there, or raise seedMaxMiB in ${config.source}`,
+      );
+    }
+    deps.log(
+      `[host-run] ${config.forwardTo} has no clone of ${name}; sending a one-time copy (${mib} MiB)`
+      + " to ~/.local/state/host-run/seed there",
+    );
+    const [program, ...rest] = sshCommand(config.forwardTo, script, "seed", [repositoryKey(local.origin), originWithoutCredentials(local.origin)]);
+    const input = openSync(bundlePath, "r");
+    let result;
+    try {
+      result = spawnSync(program!, rest, {
+        env: { ...deps.environment },
+        stdio: [input, "pipe", "pipe"],
+        timeout: 60 * 60_000,
+      });
+    } finally {
+      closeSync(input);
+    }
+    if (result.status !== 0) {
+      throw new ForwardUnavailableError(
+        `could not seed ${config.forwardTo} with ${name}: ${lastLines(result.stderr?.toString("utf8") ?? "") || `exit ${result.status ?? "timeout"}`}`,
+      );
+    }
+    const seconds = Math.round((Date.now() - startedAt) / 100) / 10;
+    deps.log(`[host-run] seeded ${config.forwardTo} with ${name} in ${seconds}s; later runs send only new commits`);
+  } finally {
+    rmSync(scratch, { force: true, recursive: true });
+  }
+}
+
+/** planForward, seeding the remote first when it has no clone at all. */
+export function planOrSeed(
+  deps: ForwardDependencies,
+  config: RemoteForwardConfig,
+  script: string,
+  cwd: string,
+  lane = "mac-ui",
+): ForwardPlan {
+  try {
+    return planForward(deps, config, script, cwd, lane);
+  } catch (error: unknown) {
+    if (!(error instanceof NoRemoteCloneError)) throw error;
+    seedRemoteRepository(deps, config, script, error.local);
+    return planForward(deps, config, script, cwd, lane);
+  }
 }
 
 /** Writes `payload.tar` (bundle when needed, patch) into scratch and returns its path. */
@@ -459,7 +642,7 @@ export function buildPayload(deps: ForwardDependencies, plan: ForwardPlan, scrat
   return tarPath;
 }
 
-function signalExitCode(signal: NodeJS.Signals): number {
+export function signalExitCode(signal: NodeJS.Signals): number {
   const numbers: Partial<Record<NodeJS.Signals, number>> = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGTERM: 15 };
   return 128 + (numbers[signal] ?? 15);
 }
@@ -468,7 +651,7 @@ function signalExitCode(signal: NodeJS.Signals): number {
  * Runs the job on the remote Mac and streams its output. Local INT/TERM/HUP
  * asks the remote job to stop and waits (bounded) for its status.
  */
-function streamRemoteRun(
+export function streamRemoteRun(
   deps: ForwardDependencies,
   config: RemoteForwardConfig,
   script: string,
@@ -476,9 +659,11 @@ function streamRemoteRun(
   payloadPath: string,
   deadlineMs: number,
   onCancel: () => void,
+  subcommand: "run" | "compute" = "run",
 ): Promise<{ readonly exitCode: number | null; readonly signal: NodeJS.Signals | null }> {
+  const lane = subcommand === "run" ? "mac-ui" : "compute";
   return new Promise((resolveRun, reject) => {
-    const [program, ...rest] = sshCommand(config.forwardTo, script, "run", runArguments);
+    const [program, ...rest] = sshCommand(config.forwardTo, script, subcommand, runArguments);
     const input = openSync(payloadPath, "r");
     // Own process group: a terminal Ctrl-C reaches host-run, which stops the
     // remote job deliberately, instead of killing ssh mid-stream.
@@ -504,7 +689,7 @@ function streamRemoteRun(
         return;
       }
       received = signal;
-      deps.log(`[host-run] ${signal}: stopping the mac-ui run on ${config.forwardTo}`);
+      deps.log(`[host-run] ${signal}: stopping the ${lane} run on ${config.forwardTo}`);
       onCancel();
       grace = setTimeout(stopSsh, cancelGraceMilliseconds);
     };
@@ -594,7 +779,7 @@ export async function forwardMacUiRun(
   const id = newForwardId();
   let started = false;
   try {
-    const plan = planForward(deps, config, script, request.cwd);
+    const plan = planOrSeed(deps, config, script, request.cwd);
     const payload = buildPayload(deps, plan, scratch);
     const launcher = deps.environment.LOCAL_EFFICIENCY_REMOTE_LAUNCHER === "direct" ? "direct" : "launchd";
     const deadlineMs = forwardDeadlineMilliseconds(request.maxHoldMilliseconds);

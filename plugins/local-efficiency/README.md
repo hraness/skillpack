@@ -16,7 +16,7 @@ Bootstrap links these into the configured Bun `bin` directory:
 
 | Command | Purpose |
 | --- | --- |
-| `host-run` | Capability-lane scheduler and `--status` holder census: compute, browser, browser-auth, mac-native, and mac-ui (UI tests, sent to another Mac when configured, through the HostRun UI app there when installed) |
+| `host-run` | Capability-lane scheduler and `--status` holder census: compute (heavy builds sent to a less loaded Mac when configured), browser, browser-auth, mac-native, and mac-ui (UI tests, sent to another Mac when configured, through the HostRun UI app there when installed) |
 | `validation-run` | Bounded validation wrapper with receipts |
 | `workspace-audit` | Read-only inventory of repositories and checkouts |
 | `session-audit` | Agent session and approval-surface inventory |
@@ -57,6 +57,6 @@ skill for guided operation.
 ## Limits
 
 - macOS-first: process, LaunchServices, and launchd behaviour assumes Darwin.
-- The scheduler coordinates one machine; it is not a CI or remote runner.
+- The scheduler coordinates one machine; it is not a CI runner. It forwards only to Macs named in `remote.json`.
 - `hra-chrome-restart` touches the user's signed-in browser only under
   explicit authorization and the `browser-auth` lane.

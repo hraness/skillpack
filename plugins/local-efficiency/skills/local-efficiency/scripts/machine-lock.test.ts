@@ -276,6 +276,36 @@ describe("host-run --lane=mac-ui with a machine lock", () => {
     }
   });
 
+  macOnly("compute forwarded from a workstation holds the lock shared; local compute does not", () => {
+    const f = fixture();
+    try {
+      const command = ["/bin/sh", "-c", `python3 -I ${join(f.scripts, "probe.py")} ${f.config.path}; echo probe=$?`];
+      const forwarded = Bun.spawnSync({
+        cmd: [process.execPath, hostRunScript, "--mode=heavy", "--label=forwarded", "--", ...command],
+        cwd: f.root,
+        env: { ...environmentFor(f.root, f.config), LOCAL_EFFICIENCY_FORWARDED: "1" },
+        stderr: "pipe",
+        stdout: "pipe",
+      });
+      expect(forwarded.exitCode, forwarded.stderr.toString()).toBe(0);
+      expect(forwarded.stdout.toString()).toContain("probe=1");
+      expect(forwarded.stderr.toString()).toContain("holding the shared CI machine lock");
+      expect(lockHeld(f.scripts, f.config.path)).toBe(false);
+      const local = Bun.spawnSync({
+        cmd: [process.execPath, hostRunScript, "--mode=heavy", "--label=local", "--", ...command],
+        cwd: f.root,
+        env: environmentFor(f.root, f.config),
+        stderr: "pipe",
+        stdout: "pipe",
+      });
+      expect(local.exitCode, local.stderr.toString()).toBe(0);
+      expect(local.stdout.toString()).toContain("probe=0");
+      expect(local.stderr.toString()).not.toContain("CI machine lock");
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  });
+
   macOnly("waits for the lock before claiming the mac-ui lease and fails closed on timeout", async () => {
     const f = fixture();
     try {

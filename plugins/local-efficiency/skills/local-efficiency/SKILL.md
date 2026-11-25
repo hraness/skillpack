@@ -229,7 +229,8 @@ lane runs locally, so CI and other machines are unchanged.
 
 1. It reads the Git root, HEAD and `origin` of the working directory, finds
    the clone with the same origin under the remote `~/src`, and asks which
-   commits it already has.
+   commits it already has. When the remote has no clone, it sends a one-time
+   copy (see [Seeding](#seeding)).
 2. It sends a `git bundle` of HEAD (only the commits the remote clone
    lacks) and a binary patch of every uncommitted change, untracked files
    included and ignored files excluded, in one ssh stream. Nothing is pushed
@@ -257,7 +258,7 @@ on another host would block local work on external state. The receiving
 Mac's own `mac-ui` lease, queue timeout and max hold govern the run.
 
 It fails closed. If forwarding is configured but the host is unreachable, the
-repository has no clone there, the commit cannot be shipped, the user has no
+repository has no clone there and cannot be seeded, the commit cannot be shipped, the user has no
 GUI session there, or the config is malformed, host-run exits 69
 (`MAC_UI_FORWARD_FAILED`) with the reason and never runs the UI work locally.
 There is no override flag; to watch a UI run on the workstation, remove the
@@ -267,10 +268,82 @@ not forwarded: put needed variables in the command (`env NAME=VALUE ...`).
 Submodules are not forwarded. A run that was already forwarded refuses to
 forward again.
 
+### Seeding
+
+When the remote has no clone with the same origin, host-run sends a full
+`git bundle` of the repository over the same ssh connection and keeps it as
+a bare repository in the remote's
+`~/.local/state/host-run/seed/<host-path-of-origin>`. It never creates or
+changes anything in the remote `~/src`. The seed's `origin` is the real
+remote URL with any user name or token removed, so later runs match it, and
+each later run sends only the commits it lacks and advances the seed. A real
+clone in `~/src` wins over a seed when both exist.
+
+- It prints the size before sending and the time after. It refuses a bundle
+  larger than `seedMaxMiB` (default 2048) and a remote with less than
+  20 GiB free; `"seedMaxMiB": 0` turns seeding off for that entry.
+- It sends Git objects only. Credentials, Git config, hooks and Git LFS
+  content stay on this Mac.
+
+## Heavy compute forwarding
+
+A workstation can send its heavy builds to a less loaded Mac. Add a
+`compute` entry next to `macUi`:
+
+```json
+{ "compute": { "forwardTo": "hra2", "modes": ["heavy", "exclusive"] } }
+```
+
+`host-run --lane=compute --mode=heavy|exclusive` then runs on that host;
+`shared` work, the default, always runs here. Without the entry nothing
+changes. Use `--mode=heavy` for builds and repository-wide checks so they can
+move.
+
+- **Same transport.** HEAD, the commits the remote lacks, and a patch of
+  uncommitted changes go over one ssh stream, as for `mac-ui`, with
+  [seeding](#seeding) when the remote has no clone.
+- **Cached workspace.** The remote keeps up to `slots` (default 2) worktrees
+  per repository under `~/.local/state/host-run/compute/<repo>/slot-N`. Each
+  run takes a free slot, resets it to the commit plus the patch
+  (`checkout --force`, `git clean -ffd`, which keeps ignored output such as
+  `target/` or `node_modules`), and runs there, so builds after the first are
+  incremental. Two runs never share a slot; when every slot is busy the run
+  waits. Idle slots are deleted, least recently used first, while free disk
+  is under `minFreeGiB` (default 60) or the cache exceeds `cacheGiB`
+  (default 80).
+- **Remote scheduling.** The command runs under the remote's own
+  `host-run --lane=compute` with the same mode, label and max hold, and holds
+  its CI machine lock shared when one is configured. It runs as a background
+  child of the ssh session, not in the GUI session, at `nice` 10, so the
+  remote's own work and CI come first. Background QoS (`taskpolicy -b`) is not
+  used because it confines the build to efficiency cores and throttles its
+  disk I/O.
+- **Environment.** Only build settings travel: `CARGO_*`, `RUSTFLAGS`,
+  `RUSTDOCFLAGS`, `RUST_BACKTRACE`, `RUST_LOG`, `RUST_TEST_THREADS`,
+  `RUST_MIN_STACK`, `MAKEFLAGS`, `CMAKE_BUILD_PARALLEL_LEVEL`, `HRA_JOBS`,
+  `CI`, `NODE_ENV`, `FORCE_COLOR`, `NO_COLOR`, `LANG`, `LC_ALL` and `TZ`.
+  Names that look like tokens, secrets or keys, and values holding local
+  paths, stay here; host-run lists what it did not send.
+- **Results.** Output streams back and host-run exits with the remote exit
+  code. A failure there is the answer: it is not rerun here. When the two
+  Macs run different macOS or Xcode versions, a failure prints both.
+- **Falls back, never fails.** If the host is unreachable, the directory is
+  not in a Git repository, a submodule has changes, seeding is refused, or
+  the remote cannot prepare the workspace, the command runs here with one
+  line: `[host-run] running LABEL on this Mac: REASON`. A command that
+  started on the remote never reruns here.
+
+Pass `--local` to keep a heavy run on this Mac when it needs this Mac: its
+outputs are used here (a binary to install or run, an app bundle, files
+another local step reads), it reads local-only state, credentials or private
+data, it binds a fixed port, or it talks to an attached device. Nested runs
+inside a lease and `mac-native` runs, `--full-cpu` included, are never
+forwarded.
+
 ### CI machine lock
 
-A Mac that also runs CI benchmarks can make `mac-ui` runs stay out of the
-way of timed measurements. Its own `~/.config/host-run/machine-lock.json`
+A Mac that also runs CI benchmarks can make `mac-ui` runs, and compute runs
+forwarded to it, stay out of the way of timed measurements. Its own `~/.config/host-run/machine-lock.json`
 (or `$XDG_CONFIG_HOME/host-run/machine-lock.json`) names the CI runners'
 machine lock:
 
@@ -278,8 +351,8 @@ machine lock:
 { "macUi": { "path": "/opt/ci-lock/machine.lock", "mode": "shared", "waitTimeoutSeconds": 3600 } }
 ```
 
-Every `mac-ui` run on that Mac, forwarded or started there, then holds the
-lock shared for the whole command. It speaks the runners'
+Every `mac-ui` run on that Mac, forwarded or started there, and every
+compute run forwarded to it, then holds the lock shared for the whole command. It speaks the runners'
 `ci-machine-lock.py` protocol: `flock` on the file plus its `.gate`, so a
 measurement waiting for the exclusive lock also holds back new UI runs.
 host-run implements the protocol itself instead of running the runner's
