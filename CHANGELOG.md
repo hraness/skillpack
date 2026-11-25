@@ -1,5 +1,13 @@
 # Changelog
 
+## local-efficiency 0.6.1 - 2026-11-25
+
+- A Mac that runs CI benchmarks can name its CI machine lock in
+  `~/.config/host-run/machine-lock.json`. Every `mac-ui` run there, forwarded
+  or local, then holds that lock shared for the whole command, so UI tests
+  never overlap a timed measurement. The wait comes before the UI slot is
+  claimed, and a timeout runs nothing and exits 76.
+
 ## local-efficiency 0.6.0 - 2026-11-25
 
 - Add a one-slot `mac-ui` host-run lane for Mac work that drives or shows UI:

@@ -20,6 +20,13 @@ import { performance } from "node:perf_hooks";
 
 import { isChromeLauncher, validateChromeExecutable } from "./chrome-launcher";
 import {
+  MachineLockTimeoutError,
+  acquireMachineLock,
+  machineLockTimeoutExitCode,
+  resolveMachineLockConfig,
+  type HeldMachineLock,
+} from "./machine-lock";
+import {
   ForwardUnavailableError,
   defaultForwardDependencies,
   forwardMacUiRun,
@@ -1238,6 +1245,39 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
     assertInheritedLeaseDescriptors(inherited);
     return (await spawnCommand(options.command, options.cwd, environment)).exitCode;
   }
+  // A machine that also runs timed CI measurements may name a CI machine
+  // lock. mac-ui runs hold it shared for the whole command, taken before the
+  // mac-ui lease so no lane slot is held while CI measures.
+  let machineLock: HeldMachineLock | null = null;
+  if (options.lane === "mac-ui") {
+    const lockConfig = resolveMachineLockConfig(environment);
+    if (lockConfig !== null) {
+      const interrupted: { signal: NodeJS.Signals | null } = { signal: null };
+      const onSignal = (signal: NodeJS.Signals): void => { interrupted.signal ??= signal; };
+      const lockSignals = ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"] as const;
+      for (const signal of lockSignals) process.on(signal, onSignal);
+      try {
+        machineLock = await acquireMachineLock(lockConfig, { cancelled: () => interrupted.signal !== null });
+      } finally {
+        for (const signal of lockSignals) process.off(signal, onSignal);
+      }
+      if (machineLock === null) {
+        console.error(`[host-run] ${interrupted.signal}: stopped waiting for the CI machine lock`);
+        return signalExitCode(interrupted.signal ?? "SIGTERM");
+      }
+    }
+  }
+  try {
+    return await runLeasedCommand(options, environment);
+  } finally {
+    machineLock?.release();
+  }
+}
+
+async function runLeasedCommand(
+  options: HostRunOptions,
+  environment: NodeJS.ProcessEnv,
+): Promise<number> {
   const capacity = permitCapacity();
   const permitCount = permitsForMode(options.mode, availableParallelism(), options.lane, options.fullCpu);
   const maxHold = options.maxHoldMilliseconds === undefined
@@ -1604,6 +1644,9 @@ if (import.meta.main) {
     } else if (error instanceof ForwardUnavailableError) {
       console.error(`[host-run] ${error.code}: ${error.message}`);
       process.exitCode = forwardUnavailableExitCode;
+    } else if (error instanceof MachineLockTimeoutError) {
+      console.error(`[host-run] ${error.code}: ${error.message}`);
+      process.exitCode = machineLockTimeoutExitCode;
     } else if (error instanceof QueueTimeoutError) {
       console.error(`[host-run] QUEUE_TIMEOUT: ${error.message}`);
       process.exitCode = queueTimeoutExitCode;

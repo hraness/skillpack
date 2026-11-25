@@ -267,6 +267,35 @@ not forwarded: put needed variables in the command (`env NAME=VALUE ...`).
 Submodules are not forwarded. A run that was already forwarded refuses to
 forward again.
 
+### CI machine lock
+
+A Mac that also runs CI benchmarks can make `mac-ui` runs stay out of the
+way of timed measurements. Its own `~/.config/host-run/machine-lock.json`
+(or `$XDG_CONFIG_HOME/host-run/machine-lock.json`) names the CI runners'
+machine lock:
+
+```json
+{ "macUi": { "path": "/opt/ci-lock/machine.lock", "mode": "shared", "waitTimeoutSeconds": 3600 } }
+```
+
+Every `mac-ui` run on that Mac, forwarded or started there, then holds the
+lock shared for the whole command. It speaks the runners'
+`ci-machine-lock.py` protocol: `flock` on the file plus its `.gate`, so a
+measurement waiting for the exclusive lock also holds back new UI runs.
+host-run implements the protocol itself instead of running the runner's
+script, which belongs to the CI account. Only `shared` is accepted.
+
+- The lock is taken before the `mac-ui` lease, so no UI slot is held while
+  CI measures. While blocked, host-run prints `waiting for the <host> CI
+  machine lock`.
+- The command never inherits the lock. It is released when host-run exits
+  for any reason, including Ctrl-C or a forwarded cancel.
+- A wait longer than `waitTimeoutSeconds` (default 3600, at most 7200) runs
+  nothing and exits 76 (`MACHINE_LOCK_TIMEOUT`). Ctrl-C while waiting exits
+  130.
+- `LOCAL_EFFICIENCY_MACHINE_LOCK_CONFIG=ABSOLUTE-PATH` points at a different
+  file, which must exist. A malformed file is an error, never a silent skip.
+
 ## Resource modes
 
 Use `shared` for one narrow check, `heavy` for production builds and ordinary
