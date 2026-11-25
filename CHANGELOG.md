@@ -1,5 +1,18 @@
 # Changelog
 
+## local-efficiency 0.7.0 - 2026-11-25
+
+- `host-run mac-ui install-helper` builds a small `HostRun UI.app` on the Mac
+  that receives forwarded UI runs. Those runs then start through it, so you
+  grant Accessibility, Screen Recording and Input Monitoring to that one app
+  instead of to every shell. It only rebuilds when its own source changes,
+  so grants survive host-run updates.
+- The app runs only the job host-run staged for that run and refuses any
+  other command. If it is configured but missing or broken, the run exits 69
+  rather than starting without it.
+- `host-run mac-ui probe` prints which privacy permissions a run has; run it
+  through forwarding to see what forwarded runs get.
+
 ## local-efficiency 0.6.1 - 2026-11-25
 
 - A Mac that runs CI benchmarks can name its CI machine lock in
