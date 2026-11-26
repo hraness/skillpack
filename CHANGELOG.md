@@ -1,5 +1,12 @@
 # Changelog
 
+## local-efficiency 0.9.2 - 2026-11-26
+
+- A source comment in `host-run.ts` still said that a workstation's mac-ui
+  lane never runs locally. Since 0.9.0, with a `presence` entry, it runs
+  there only while the owner is idle at an unlocked screen. The comment now
+  says so. Behaviour is unchanged.
+
 ## local-efficiency 0.9.1 - 2026-11-26
 
 - Forwarding to a Mac whose clone is a partial (blob-less) clone works
