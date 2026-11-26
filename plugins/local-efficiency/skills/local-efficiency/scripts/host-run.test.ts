@@ -56,6 +56,15 @@ import {
   type HostRunOptions,
 } from "./host-run";
 
+/**
+ * The caller's environment without this Mac's ~/.config/host-run: a
+ * workstation's remote.json would otherwise forward or place heavy and
+ * exclusive test runs.
+ */
+function isolatedEnvironment(): NodeJS.ProcessEnv {
+  return { ...process.env, XDG_CONFIG_HOME: join(tmpdir(), "host-run-test-no-config") };
+}
+
 describe("host-wide resource wrapper", () => {
   test("uses the established 1/2/all weighted model", () => {
     expect(permitCapacity(18)).toBe(6);
@@ -284,7 +293,7 @@ describe("host-wide resource wrapper", () => {
       ],
       cwd: root,
       env: {
-        ...process.env,
+        ...isolatedEnvironment(),
         ATET_HOST_RESOURCES_MODULE: "/missing/atet-module.js",
         LOCAL_EFFICIENCY_LEASE: JSON.stringify({
           capacity: permitCapacity(),
@@ -340,7 +349,7 @@ describe("host-wide resource wrapper", () => {
           };
         }
       `);
-      const environment = { ...process.env };
+      const environment = isolatedEnvironment();
       delete environment.LOCAL_EFFICIENCY_LEASE;
       const result = Bun.spawnSync({
         cmd: [
@@ -399,7 +408,7 @@ describe("host-wide resource wrapper", () => {
           };
         }
       `);
-      const environment = { ...process.env };
+      const environment = isolatedEnvironment();
       delete environment.LOCAL_EFFICIENCY_LEASE;
       const wrapper = Bun.spawn({
         cmd: [
@@ -468,7 +477,7 @@ describe("host-wide resource wrapper", () => {
           };
         }
       `);
-      const environment = { ...process.env };
+      const environment = isolatedEnvironment();
       delete environment.LOCAL_EFFICIENCY_LEASE;
       const result = Bun.spawnSync({
         cmd: [
@@ -534,7 +543,7 @@ describe("host-wide resource wrapper", () => {
       await Bun.write(${JSON.stringify(ready)}, "ready");
       await Bun.sleep(10_000);
     `;
-    const environment = { ...process.env };
+    const environment = isolatedEnvironment();
     delete environment.LOCAL_EFFICIENCY_LEASE;
     const wrapper = Bun.spawn({
       cmd: [
@@ -606,7 +615,7 @@ describe("host-wide resource wrapper", () => {
       child.unref();
       await Bun.write(${JSON.stringify(ready)}, "ready");
     `;
-    const environment = { ...process.env };
+    const environment = isolatedEnvironment();
     delete environment.LOCAL_EFFICIENCY_LEASE;
     const wrapper = Bun.spawn({
       cmd: [
@@ -661,7 +670,7 @@ describe("host-wide resource wrapper", () => {
         }
       `);
       const childMarker = join(root, "child-ran");
-      const environment = { ...process.env };
+      const environment = isolatedEnvironment();
       delete environment.LOCAL_EFFICIENCY_LEASE;
       const result = Bun.spawnSync({
         cmd: [
@@ -1037,7 +1046,7 @@ describe("host-wide resource wrapper", () => {
   };
 
   const cleanEnvironment = (): NodeJS.ProcessEnv => {
-    const environment = { ...process.env };
+    const environment = isolatedEnvironment();
     for (const key of [
       "LOCAL_EFFICIENCY_LEASE", "CARGO_BUILD_JOBS", "HRA_JOBS", "MAKEFLAGS",
       "NEXTEST_TEST_THREADS", "RAYON_NUM_THREADS", "AGENT_BROWSER_EXECUTABLE_PATH", "HRA_CHROME",

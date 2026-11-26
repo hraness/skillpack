@@ -170,7 +170,7 @@ export async function forwardComputeRun(
     try {
       plan = planOrSeed(deps, config, script, request.cwd, "compute");
       assertCleanSubmodules(deps, plan.local.root);
-      payload = buildPayload(deps, plan, scratch);
+      payload = buildPayload(deps, plan, scratch, config);
     } catch (error: unknown) {
       if (error instanceof ForwardUnavailableError) return { ran: false, reason: error.message };
       throw error;

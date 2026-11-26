@@ -8,13 +8,18 @@
 # Subcommands:
 #   list                           print "kind<TAB>path<TAB>origin" for ~/src/*
 #                                  and for repositories seeded into host-run state
-#   have REPO SHA...               print the SHAs whose commits REPO has
+#   have REPO SHA...               print the SHAs whose commits REPO has, then
+#                                  "partial" when REPO is a partial clone
+#   missing REPO                   read object ids on stdin and print those that
+#                                  neither REPO nor its host-run fill store has
 #   seed KEY ORIGIN                read a full git bundle on stdin and keep it as
 #                                  a bare repository under state/seed/KEY
 #   run ID REPO SHA PREFIX LAUNCHER KEEP DEADLINE_S HOST_RUN -- HOST_RUN_ARGS...
 #                                  read a tar (bundle, patch) on stdin, build a
 #                                  throwaway tree and run HOST_RUN in the GUI
-#                                  session; exits with the command's status
+#                                  session; exits with the command's status. An
+#                                  objects.pack in the tar holds objects a partial
+#                                  clone lacks; they go into the fill store
 #   compute ID REPO SHA PREFIX KEY SLOTS CACHE_GIB MIN_FREE_GIB DEADLINE_S HOST_RUN -- HOST_RUN_ARGS...
 #                                  same payload, but reset a cached per-repository
 #                                  workspace (build output kept) and run HOST_RUN
@@ -34,6 +39,7 @@ set -u
 host_state="$HOME/.local/state/host-run"
 state_root="$host_state/remote"
 seed_root="$host_state/seed"
+fill_root="$host_state/fill"
 compute_root="$host_state/compute"
 uid=$(id -u)
 host=$(hostname -s 2>/dev/null || echo remote)
@@ -72,6 +78,31 @@ is_repo() { [ -e "$1/.git" ] || { [ -f "$1/HEAD" ] && [ -d "$1/objects" ]; }; }
 is_seed() {
   case "$1" in "$seed_root"/*) return 0 ;; esac
   return 1
+}
+
+# Objects a partial clone under ~/src lacks, sent by the workstation, live in a
+# host-run-owned bare repository that throwaway trees use as a second
+# alternate; ~/src itself is never written. A seed is host-run's own and full.
+fill_dir() {
+  if is_seed "$1"; then printf '%s' "$1"; return; fi
+  local name
+  name=$(basename "$1" | tr -c 'A-Za-z0-9._\n-' '-')
+  case "$name" in "" | .*) name="repo-$name" ;; esac
+  printf '%s/%s' "$fill_root" "$name"
+}
+
+is_partial() {
+  [ -n "$(git -C "$1" config --get extensions.partialclone 2>/dev/null)" ] && return 0
+  git -C "$1" config --get-regexp '^remote\..*\.promisor$' 2>/dev/null | grep -q ' true$'
+}
+
+# Adds the fill store to a tree's alternates (once).
+link_fill() {
+  local tree=$1 fill alternates
+  fill=$(fill_dir "$repo")
+  [ "$fill" != "$repo" ] && [ -d "$fill/objects" ] || return 0
+  alternates="$tree/.git/objects/info/alternates"
+  grep -qxF "$fill/objects" "$alternates" 2>/dev/null || printf '%s\n' "$fill/objects" >>"$alternates"
 }
 
 free_gib() { df -k "$HOME" 2>/dev/null | awk 'NR == 2 { print int($4 / 1048576) }'; }
@@ -123,8 +154,24 @@ have)
   shift
   is_repo "$repo" || die "no repository at $repo"
   for sha in "$@"; do
-    if git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null; then printf '%s\n' "$sha"; fi
+    if GIT_NO_LAZY_FETCH=1 git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null; then printf '%s\n' "$sha"; fi
   done
+  is_partial "$repo" && printf 'partial\n'
+  exit 0
+  ;;
+
+missing)
+  # Never fetch lazily: this host may have no credentials for the origin, and
+  # the point is to learn what the workstation has to send.
+  [ $# -eq 1 ] || die "missing needs REPO"
+  repo=$1
+  is_repo "$repo" || die "no repository at $repo"
+  fill=$(fill_dir "$repo")
+  if [ "$fill" != "$repo" ] && [ -d "$fill/objects" ]; then
+    export GIT_ALTERNATE_OBJECT_DIRECTORIES="$fill/objects"
+  fi
+  GIT_NO_LAZY_FETCH=1 GIT_TERMINAL_PROMPT=0 git -C "$repo" cat-file --batch-check 2>/dev/null \
+    | awk '$2 == "missing" { print $1 }'
   exit 0
   ;;
 
@@ -321,6 +368,19 @@ trap release_slot EXIT
 mkdir "$dir/payload" || prepare_failed "cannot create payload directory"
 tar -xf - -C "$dir/payload" || prepare_failed "could not read the forwarded payload"
 
+# Objects the clone lacks (a partial clone) go into the fill store before any
+# tree is built. index-pack only adds objects, so a repeat is harmless.
+if [ -s "$dir/payload/objects.pack" ]; then
+  fill=$(fill_dir "$repo")
+  if [ "$fill" != "$repo" ] && [ ! -d "$fill/objects" ]; then
+    mkdir -p "$fill_root" && chmod 700 "$fill_root" 2>/dev/null
+    git init --quiet --bare "$fill" >/dev/null 2>"$dir/fill.err" \
+      || prepare_failed "could not create the object store $fill: $(tail -n 3 "$dir/fill.err")"
+  fi
+  GIT_NO_LAZY_FETCH=1 git -C "$fill" index-pack --stdin <"$dir/payload/objects.pack" >/dev/null 2>"$dir/fill.err" \
+    || prepare_failed "could not store the objects $repo lacks in $fill: $(tail -n 3 "$dir/fill.err")"
+fi
+
 # A seeded repository belongs to host-run, so keep it current: later runs
 # then send only the commits made since this one.
 if is_seed "$repo" && [ -s "$dir/payload/bundle" ]; then
@@ -417,6 +477,18 @@ claim_slot() {
 # output such as target/, .build/, node_modules/) stay as the cache;
 # tracked changes and untracked files from earlier runs are removed.
 prepare_failure=""
+
+# git checkout exits 0 when blobs are missing and leaves those files out, so
+# count them: a partial clone the workstation could not fill shows up here
+# instead of as a confusing patch failure.
+incomplete_checkout() {
+  local count
+  count=$(git -C "$1" ls-files --deleted 2>/dev/null | wc -l | tr -dc '0-9')
+  [ "${count:-0}" -gt 0 ] || return 1
+  prepare_failure="checking out $sha left $count tracked files out: $repo on $host lacks their contents (a partial clone without them); update host-run on the workstation, or run git fetch in $repo there"
+  return 0
+}
+
 reset_workspace() {
   local tree=$1
   if [ ! -e "$tree/.git" ]; then
@@ -425,6 +497,7 @@ reset_workspace() {
       || { prepare_failure="could not create a workspace clone of $repo: $(tail -n 3 "$dir/clone.err")"; return 1; }
     say "created the cached workspace ${tree#"$compute_root"/} (cold: no build cache yet)"
   fi
+  link_fill "$tree"
   local origin
   origin=$(git -C "$repo" config --get remote.origin.url 2>/dev/null)
   [ -n "$origin" ] && git -C "$tree" remote set-url origin "$origin" 2>/dev/null
@@ -439,6 +512,7 @@ reset_workspace() {
     || { prepare_failure="could not check out $sha: $(tail -n 3 "$dir/checkout.err")"; return 1; }
   git -C "$tree" clean -ffdq 2>"$dir/clean.err" \
     || { prepare_failure="could not clean the workspace: $(tail -n 3 "$dir/clean.err")"; return 1; }
+  incomplete_checkout "$tree" && return 1
   if [ -f "$tree/.gitmodules" ]; then
     git -C "$tree" submodule update --init --recursive --quiet 2>"$dir/submodule.err" \
       || { prepare_failure="could not check out submodules: $(tail -n 3 "$dir/submodule.err")"; return 1; }
@@ -461,6 +535,7 @@ else
     || prepare_failed "could not create a throwaway clone of $repo"
   origin=$(git -C "$repo" config --get remote.origin.url 2>/dev/null)
   [ -n "$origin" ] && git -C "$tree" remote set-url origin "$origin"
+  link_fill "$tree"
   if [ -s "$dir/payload/bundle" ]; then
     git -C "$tree" bundle unbundle "$dir/payload/bundle" >/dev/null 2>"$dir/unbundle.err" \
       || prepare_failed "could not apply the commit bundle: $(tail -n 3 "$dir/unbundle.err")"
@@ -471,6 +546,7 @@ else
   if [ -d "$repo/.git/lfs" ]; then git -C "$tree" config lfs.storage "$repo/.git/lfs"; fi
   git -C "$tree" -c advice.detachedHead=false checkout --quiet --detach "$sha" 2>"$dir/checkout.err" \
     || prepare_failed "could not check out $sha: $(tail -n 3 "$dir/checkout.err")"
+  incomplete_checkout "$tree" && prepare_failed "$prepare_failure"
 fi
 if [ -s "$dir/payload/patch" ]; then
   git -C "$tree" apply --binary --whitespace=nowarn "$dir/payload/patch" 2>"$dir/apply.err" \

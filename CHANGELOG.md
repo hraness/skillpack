@@ -1,5 +1,14 @@
 # Changelog
 
+## local-efficiency 0.9.1 - 2026-11-26
+
+- Forwarding to a Mac whose clone is a partial (blob-less) clone works
+  without credentials there: this Mac sends the file contents that clone
+  lacks, once, with their count and size, into host-run's own object store
+  on that Mac. The clone itself is never written.
+- A forwarded checkout that leaves files out now stops with that reason
+  instead of a later "could not apply the uncommitted changes" error.
+
 ## local-efficiency 0.9.0 - 2026-11-25
 
 - With a `presence` entry in `~/.config/host-run/remote.json`, a
