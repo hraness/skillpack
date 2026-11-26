@@ -134,7 +134,9 @@ export const macNativeProfile = Object.freeze({
  * other UI tests, window-opening journeys, computer use or AppleScript against
  * our own apps, and anything that brings an app window or Simulator.app to the
  * front. One slot, so UI runs never fight over focus. On a workstation with a
- * forwarding config the lane never runs locally (see mac-ui-forward.ts).
+ * forwarding config the lane is forwarded to the other Mac (see
+ * mac-ui-forward.ts). With a `presence` entry it runs here only while the owner
+ * is idle at an unlocked screen (see placeMacUi in placement.ts).
  */
 export const macUiProfile = Object.freeze({
   id: "local-efficiency/mac-ui-v1",
