@@ -1,5 +1,21 @@
 # Changelog
 
+## local-efficiency 0.9.3 - 2026-11-26
+
+- Forwarded runs no longer fail with "could not apply the commit bundle:
+  some prerequisite commits exist in the object store, but are not connected
+  to the repository's history". That happened when the remote clone was a
+  partial (blob-less) clone and no ref there reached the commits the run
+  built on, as with a pull request fetched into `FETCH_HEAD` for a detached
+  worktree. mac-ui runs exited 69; compute runs rebuilt their cached
+  workspace, losing its build output, and then ran on this Mac.
+- host-run now sends a self-contained Git pack of the new commits instead of
+  a `git bundle`, with the list of commits they build on. The remote checks
+  that it has each of those and stops with exit 69 naming any it lacks.
+- A changed file no longer travels as a delta against a version that a
+  partial remote clone never fetched. Such runs failed with "pack has 1
+  unresolved delta".
+
 ## local-efficiency 0.9.2 - 2026-11-26
 
 - A source comment in `host-run.ts` still said that a workstation's mac-ui

@@ -26,6 +26,7 @@ import {
   buildPayload,
   type ComputeForwardConfig,
   defaultForwardDependencies,
+  describeForwardedHead,
   type ForwardDependencies,
   forwardDeadlineMilliseconds,
   ForwardUnavailableError,
@@ -183,7 +184,7 @@ export async function forwardComputeRun(
     const sentNames = environment.assignments.map((assignment) => assignment.slice(0, assignment.indexOf("=")));
     deps.log(
       `[host-run] forwarding ${request.mode} compute ${request.label} to ${config.forwardTo}`
-      + ` (${plan.local.head.slice(0, 12)}${plan.bundleNeeded ? " + bundle" : ""}, run ${id}`
+      + ` (${describeForwardedHead(plan, payload)}, run ${id}`
       + `${sentNames.length > 0 ? `, env ${sentNames.join(" ")}` : ""}`
       + `${environment.kept.length > 0 ? `, not sent: ${environment.kept.join(" ")}` : ""});`
       + " pass --local to run here",
@@ -208,7 +209,7 @@ export async function forwardComputeRun(
         "--",
         ...remoteHostRunArguments({ ...request, artifacts: [], command }, "compute"),
       ],
-      payload,
+      payload.path,
       deadlineMs,
       () => {
         const cancel = remoteCall(deps, config, script, "cancel", [id], 30_000);

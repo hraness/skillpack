@@ -15,11 +15,16 @@
 #   seed KEY ORIGIN                read a full git bundle on stdin and keep it as
 #                                  a bare repository under state/seed/KEY
 #   run ID REPO SHA PREFIX LAUNCHER KEEP DEADLINE_S HOST_RUN -- HOST_RUN_ARGS...
-#                                  read a tar (bundle, patch) on stdin, build a
-#                                  throwaway tree and run HOST_RUN in the GUI
-#                                  session; exits with the command's status. An
-#                                  objects.pack in the tar holds objects a partial
-#                                  clone lacks; they go into the fill store
+#                                  read a tar (patch, and commits.pack plus
+#                                  prerequisites when REPO lacks SHA) on stdin,
+#                                  build a throwaway tree and run HOST_RUN in the
+#                                  GUI session; exits with the command's status.
+#                                  commits.pack is a self-contained pack of the
+#                                  commits REPO lacks; prerequisites lists the
+#                                  commits they build on, which REPO must have
+#                                  (no ref has to reach them). An objects.pack
+#                                  holds objects a partial clone lacks; they go
+#                                  into the fill store
 #   compute ID REPO SHA PREFIX KEY SLOTS CACHE_GIB MIN_FREE_GIB DEADLINE_S HOST_RUN -- HOST_RUN_ARGS...
 #                                  same payload, but reset a cached per-repository
 #                                  workspace (build output kept) and run HOST_RUN
@@ -368,6 +373,19 @@ trap release_slot EXIT
 mkdir "$dir/payload" || prepare_failed "cannot create payload directory"
 tar -xf - -C "$dir/payload" || prepare_failed "could not read the forwarded payload"
 
+# prerequisites lists the commits the forwarded ones build on, found in REPO
+# by `have`. Having them is enough: commits.pack holds every object the new
+# commits add and the rest comes from REPO or the fill store, so no ref has
+# to reach them (a pull request fetched into FETCH_HEAD for a worktree has
+# none). One can still be missing if REPO pruned it since or is shallow.
+if [ -s "$dir/payload/prerequisites" ]; then
+  while IFS= read -r prerequisite || [ -n "$prerequisite" ]; do
+    case "$prerequisite" in "" | *[!0-9a-f]*) prepare_failed "invalid prerequisite commit in the forwarded payload: $prerequisite" ;; esac
+    GIT_NO_LAZY_FETCH=1 git -C "$repo" cat-file -e "$prerequisite^{commit}" 2>/dev/null \
+      || prepare_failed "the forwarded commits build on $prerequisite, which $repo on $host does not have; run host-run again (if that clone is shallow, run git fetch --unshallow there first)"
+  done <"$dir/payload/prerequisites"
+fi
+
 # Objects the clone lacks (a partial clone) go into the fill store before any
 # tree is built. index-pack only adds objects, so a repeat is harmless.
 if [ -s "$dir/payload/objects.pack" ]; then
@@ -382,9 +400,15 @@ if [ -s "$dir/payload/objects.pack" ]; then
 fi
 
 # A seeded repository belongs to host-run, so keep it current: later runs
-# then send only the commits made since this one.
-if is_seed "$repo" && [ -s "$dir/payload/bundle" ]; then
-  git -C "$repo" fetch --quiet "$dir/payload/bundle" "+HEAD:refs/host-run/last" >/dev/null 2>&1
+# then send only the commits made since this one. The ref moves only when
+# everything SHA reaches is there, and maintenance keeps the packs that pile
+# up in check, as `git fetch` would.
+if is_seed "$repo" && [ -s "$dir/payload/commits.pack" ]; then
+  if git -C "$repo" index-pack --stdin <"$dir/payload/commits.pack" >/dev/null 2>&1 \
+    && git -C "$repo" rev-list --objects --quiet "$sha" --not --all >/dev/null 2>&1; then
+    git -C "$repo" update-ref refs/host-run/last "$sha" >/dev/null 2>&1
+    git -C "$repo" maintenance run --auto --quiet </dev/null >/dev/null 2>&1
+  fi
 fi
 
 lock_alive() {
@@ -489,6 +513,15 @@ incomplete_checkout() {
   return 0
 }
 
+# Adds the forwarded commits to a tree's own object store. The pack is
+# self-contained, so index-pack needs no object from REPO (unlike a bundle's
+# thin pack, whose deltas may be against file contents a partial clone lacks).
+apply_commits() {
+  [ -s "$dir/payload/commits.pack" ] || return 0
+  GIT_NO_LAZY_FETCH=1 git -C "$1" index-pack --stdin <"$dir/payload/commits.pack" >/dev/null 2>"$dir/index-pack.err" \
+    || { prepare_failure="could not add the forwarded commits: $(tail -n 3 "$dir/index-pack.err")"; return 1; }
+}
+
 reset_workspace() {
   local tree=$1
   if [ ! -e "$tree/.git" ]; then
@@ -501,10 +534,7 @@ reset_workspace() {
   local origin
   origin=$(git -C "$repo" config --get remote.origin.url 2>/dev/null)
   [ -n "$origin" ] && git -C "$tree" remote set-url origin "$origin" 2>/dev/null
-  if [ -s "$dir/payload/bundle" ]; then
-    git -C "$tree" bundle unbundle "$dir/payload/bundle" >/dev/null 2>"$dir/unbundle.err" \
-      || { prepare_failure="could not apply the commit bundle: $(tail -n 3 "$dir/unbundle.err")"; return 1; }
-  fi
+  apply_commits "$tree" || return 1
   git -C "$tree" cat-file -e "$sha^{commit}" 2>/dev/null \
     || { prepare_failure="commit $sha is not available on $host"; return 1; }
   if [ -d "$repo/.git/lfs" ]; then git -C "$tree" config lfs.storage "$repo/.git/lfs"; fi
@@ -536,10 +566,7 @@ else
   origin=$(git -C "$repo" config --get remote.origin.url 2>/dev/null)
   [ -n "$origin" ] && git -C "$tree" remote set-url origin "$origin"
   link_fill "$tree"
-  if [ -s "$dir/payload/bundle" ]; then
-    git -C "$tree" bundle unbundle "$dir/payload/bundle" >/dev/null 2>"$dir/unbundle.err" \
-      || prepare_failed "could not apply the commit bundle: $(tail -n 3 "$dir/unbundle.err")"
-  fi
+  apply_commits "$tree" || prepare_failed "$prepare_failure"
   git -C "$tree" cat-file -e "$sha^{commit}" 2>/dev/null \
     || prepare_failed "commit $sha is not available on $host"
   # Reuse the existing clone's Git LFS objects instead of downloading them again.

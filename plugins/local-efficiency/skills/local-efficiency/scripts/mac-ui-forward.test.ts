@@ -15,7 +15,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
+  buildPayload,
+  defaultForwardDependencies,
   type ForwardDependencies,
+  type ForwardPlan,
   ForwardUnavailableError,
   forwardDeadlineMilliseconds,
   forwardUnavailableExitCode,
@@ -203,7 +206,7 @@ describe("mac-ui forwarding command construction", () => {
     expect(newForwardId(new Date("2026-11-25T01:02:03.456Z"))).toMatch(/^20261125-010203-[0-9a-f]{8}$/u);
   });
 
-  test("plans a bundle only when the remote clone lacks HEAD, excluding commits it has", () => {
+  test("plans to send commits only when the remote clone lacks HEAD, excluding commits it has", () => {
     const head = "a".repeat(40);
     const shared = "b".repeat(40);
     const missing = "c".repeat(40);
@@ -231,9 +234,9 @@ describe("mac-ui forwarding command construction", () => {
       },
     });
     const config = { forwardTo: "hra2", remoteHostRun: "host-run", source: "test" };
-    const needsBundle = planForward(deps([shared]), config, "true", "/repo/sub");
-    expect(needsBundle).toEqual({
-      bundleNeeded: true,
+    const needsCommits = planForward(deps([shared]), config, "true", "/repo/sub");
+    expect(needsCommits).toEqual({
+      commitsNeeded: true,
       haves: [shared],
       local: { head, origin: "git@github.com:o/r.git", prefix: "sub", root: "/repo" },
       missing: [],
@@ -241,7 +244,7 @@ describe("mac-ui forwarding command construction", () => {
     });
     const haveCall = calls.find((argv) => argv[0] === "ssh" && argv.at(-1)!.includes(" have "))!;
     expect(haveCall.at(-1)).toContain(`/r/src/r ${head} ${shared} ${missing}`);
-    expect(planForward(deps([head, shared]), config, "true", "/repo/sub")).toMatchObject({ bundleNeeded: false, haves: [shared] });
+    expect(planForward(deps([head, shared]), config, "true", "/repo/sub")).toMatchObject({ commitsNeeded: false, haves: [shared] });
   });
 
   test("fails closed with a clear error when the host is unreachable or has no clone", () => {
@@ -304,7 +307,27 @@ type Fixture = {
   readonly root: string;
 };
 
-function fixture(options: { readonly remoteClone?: boolean | "partial"; readonly config?: object } = {}): Fixture {
+/** 400 numbered lines: big enough that a one-line change to them is packed as a delta. */
+function numberedLines(name: string): string {
+  return Array.from({ length: 400 }, (_, index) => `${name} line ${index + 1} of a file big enough to be packed as a delta\n`).join("");
+}
+
+type FixtureOptions = {
+  readonly config?: object;
+  /** The first commit has big.txt, and the local commit adds a line to it. */
+  readonly bigFile?: boolean;
+  /**
+   * After the remote clone is made, origin's main gains a commit that adds
+   * x.txt and a pull request branch `pr` changes it. The remote clone fetches
+   * `pr` into FETCH_HEAD only and checks it out in a worktree outside ~/src,
+   * so it has those commits but no ref there reaches them (HRA2's clone on
+   * 2026-11-26). The local commit is made on top of `pr`.
+   */
+  readonly pullRequest?: boolean;
+  readonly remoteClone?: boolean | "partial";
+};
+
+function fixture(options: FixtureOptions = {}): Fixture {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "le-forward-e2e-")));
   const git = "git -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false";
   const origin = join(root, "origin.git");
@@ -314,25 +337,41 @@ function fixture(options: { readonly remoteClone?: boolean | "partial"; readonly
   writeFileSync(join(seed, "gone.txt"), "delete me\n");
   mkdirSync(join(seed, "sub"));
   writeFileSync(join(seed, "sub", "keep.txt"), "sub\n");
+  if (options.bigFile === true) writeFileSync(join(seed, "big.txt"), numberedLines("big"));
   sh(seed, `${git} add -A && ${git} commit --quiet -m seed && git remote add origin ${origin} && git push --quiet origin main`);
   const remoteHome = join(root, "remote-home");
   const remoteClone = join(remoteHome, "src", "proj");
   mkdirSync(join(remoteHome, "src"), { recursive: true });
+  if (options.pullRequest === true && options.remoteClone === false) throw new Error("pullRequest needs a remote clone");
+  const fetchPullRequest = (served: string): void => {
+    if (options.pullRequest !== true) return;
+    writeFileSync(join(seed, "x.txt"), numberedLines("x"));
+    sh(seed, `${git} add x.txt && ${git} commit --quiet -m main-later && git switch --quiet -c pr`);
+    writeFileSync(join(seed, "x.txt"), `${numberedLines("x")}a pull request line\n`);
+    sh(seed, `${git} commit --quiet -am pull-request && git push --quiet origin main pr`);
+    if (served !== origin) sh(seed, `git push --quiet ${served} main pr`);
+    sh(remoteClone, `git fetch --quiet --refmap= origin pr && git worktree add --quiet --detach ${join(root, "remote-worktree")} FETCH_HEAD`);
+  };
   if (options.remoteClone === "partial") {
     // A blob-less clone whose promisor remote is gone, like a clone on a Mac
     // without credentials for the origin: missing blobs cannot be fetched.
     const served = join(root, "served.git");
     sh(root, `git clone --quiet --bare ${origin} ${served} && git -C ${served} config uploadpack.allowFilter true`);
     sh(root, `git clone --quiet --filter=blob:none --no-checkout file://${served} ${remoteClone}`);
+    fetchPullRequest(served);
     rmSync(served, { force: true, recursive: true });
     sh(root, `git -C ${remoteClone} remote set-url origin https://github.com/test/proj.git`);
   } else if (options.remoteClone !== false) {
-    sh(root, `git clone --quiet ${origin} ${remoteClone} && git -C ${remoteClone} remote set-url origin https://github.com/test/proj.git`);
+    sh(root, `git clone --quiet ${origin} ${remoteClone}`);
+    fetchPullRequest(origin);
+    sh(root, `git -C ${remoteClone} remote set-url origin https://github.com/test/proj.git`);
   }
   const local = join(root, "local");
   sh(root, `git clone --quiet ${origin} ${local}`);
+  if (options.pullRequest === true) sh(local, "git switch --quiet -c topic origin/pr");
   writeFileSync(join(local, "later.txt"), "a commit the remote clone lacks\n");
-  sh(local, `${git} add later.txt && ${git} commit --quiet -m later && git remote set-url origin git@github.com:test/proj.git`);
+  if (options.bigFile === true) writeFileSync(join(local, "big.txt"), `${numberedLines("big")}one more line\n`);
+  sh(local, `${git} add -A && ${git} commit --quiet -m later && git remote set-url origin git@github.com:test/proj.git`);
   // Uncommitted: a modified file, a deleted file, an untracked text and binary file, an ignored file.
   writeFileSync(join(local, "notes.txt"), "committed\nplus a local edit\n");
   rmSync(join(local, "gone.txt"));
@@ -422,7 +461,7 @@ describe("mac-ui forwarding end to end (fake ssh, direct launcher)", () => {
       expect(result.stdout).toContain("forwarded=1");
       expect(result.stderr).toContain("to-stderr");
       expect(result.stderr).toContain("forwarding shared mac-ui e2e to fakehost");
-      expect(result.stderr).toContain("+ bundle");
+      expect(result.stderr).toContain(`(${head.slice(0, 12)} + 1 commit, clone `);
       expect(result.stderr).toContain("artifact not found: missing.txt");
       expect(readFileSync(join(f.local, "out", "result.txt"), "utf8")).toBe("artifact\n");
       // The remote ran under its own mac-ui lease.
@@ -439,15 +478,15 @@ describe("mac-ui forwarding end to end (fake ssh, direct launcher)", () => {
     }
   }, 120_000);
 
-  remoteMac("sends no bundle when the remote clone already has HEAD", () => {
+  remoteMac("sends no commits when the remote clone already has HEAD", () => {
     const f = fixture();
     try {
       sh(f.local, `git push --quiet ${join(f.root, "origin.git")} HEAD:main`);
       sh(f.remoteClone, `git fetch --quiet ${join(f.root, "origin.git")} main`);
-      const result = hostRun(f, f.local, ["--lane=mac-ui", "--label=nobundle", "--", "git", "rev-parse", "HEAD"]);
+      const result = hostRun(f, f.local, ["--lane=mac-ui", "--label=nocommits", "--", "git", "rev-parse", "HEAD"]);
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout.trim()).toBe(sh(f.local, "git rev-parse HEAD"));
-      expect(result.stderr).not.toContain("+ bundle");
+      expect(result.stderr).toContain(`(${sh(f.local, "git rev-parse --short=12 HEAD")}, clone `);
       expect(remoteRuns(f)).toEqual([]);
     } finally {
       rmSync(f.root, { force: true, recursive: true });
@@ -619,12 +658,13 @@ describe("remote repository names and seeding", () => {
       const second = hostRun(f, f.local, ["--lane=mac-ui", "--label=seeded", "--", "true"]);
       expect(second.status, second.stderr).toBe(0);
       expect(second.stderr).not.toContain("one-time copy");
-      expect(second.stderr).not.toContain("+ bundle");
-      // A new commit travels as a small bundle and advances the seed.
+      expect(second.stderr).not.toMatch(/ \+ \d+ commits?,/u);
+      // A new commit travels in a small pack and advances the seed. The local
+      // commit origin lacks travels again: no ref here says the seed has it.
       sh(f.local, "git -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit --quiet --allow-empty -m next");
       const third = hostRun(f, f.local, ["--lane=mac-ui", "--label=seeded", "--", "git", "rev-parse", "HEAD"]);
       expect(third.status, third.stderr).toBe(0);
-      expect(third.stderr).toContain("+ bundle");
+      expect(third.stderr).toContain(" + 2 commits, ");
       expect(sh(seed, "git rev-parse refs/host-run/last")).toBe(sh(f.local, "git rev-parse HEAD"));
     } finally {
       rmSync(f.root, { force: true, recursive: true });
@@ -868,6 +908,117 @@ describe("forwarding to a partial clone (blob-less, origin unreachable)", () => 
       expect(result.stderr).toContain("is a partial clone without 3 objects");
       expect(result.stderr).toContain("sending objects is off (seedMaxMiB is 0");
       expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+});
+
+/** The payload host-run sends for the local HEAD, from the real planner and packer. */
+function forwardedPayload(f: Fixture, adjust: (plan: ForwardPlan) => ForwardPlan = (plan) => plan): Buffer {
+  const deps: ForwardDependencies = { ...defaultForwardDependencies(f.env), log: () => {} };
+  const config = { forwardTo: "fakehost", remoteHostRun: hostRunScript, source: join(f.env.XDG_CONFIG_HOME!, "host-run", "remote.json") };
+  const plan = adjust(planForward(deps, config, readFileSync(remoteScriptPath, "utf8"), f.local));
+  const scratch = mkdtempSync(join(f.root, "scratch-"));
+  buildPayload(deps, plan, scratch, config);
+  return readFileSync(join(scratch, "payload.tar"));
+}
+
+/** Runs `mac-ui-remote.sh run` here as ssh would on the remote Mac (direct launcher), with `sh -c SCRIPT` as the command. */
+function runRemoteHalf(f: Fixture, payload: Buffer, sha: string, script: string) {
+  return spawnSync("/bin/bash", [remoteScriptPath, "run", `direct-${process.pid}`, f.remoteClone, sha, "", "direct", "0", "60", "/bin/sh", "--", "-c", script], {
+    encoding: "utf8",
+    env: { ...f.env, HOME: f.remoteHome },
+    input: payload,
+    timeout: 60_000,
+  });
+}
+
+// HRA2 on 2026-11-26: its ~/src clone is a blob-less partial clone that got a
+// pull request's commits through `git fetch origin <branch>` (FETCH_HEAD only)
+// for a detached worktree. host-run asked which commits it has, built on them,
+// and `git bundle unbundle` refused: "some prerequisite commits exist in the
+// object store, but are not connected to the repository's history".
+describe("forwarding commits built on ones the remote clone has but no ref reaches", () => {
+  remoteMac("mac-ui: runs at the local HEAD", () => {
+    const f = fixture({ remoteClone: "partial", pullRequest: true });
+    try {
+      const pullRequest = sh(f.local, "git rev-parse origin/pr");
+      expect(sh(f.remoteClone, `git cat-file -t ${pullRequest}`)).toBe("commit");
+      expect(sh(f.remoteClone, `git for-each-ref --contains ${pullRequest}`)).toBe("");
+      const before = cloneState(f.remoteClone);
+      const result = hostRun(f, f.local, ["--lane=mac-ui", "--label=pr", "--", "sh", "-c", "git rev-parse HEAD; tail -n 1 x.txt; cat later.txt notes.txt"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toBe(`${sh(f.local, "git rev-parse HEAD")}\na pull request line\na commit the remote clone lacks\ncommitted\nplus a local edit\n`);
+      expect(result.stderr).toContain(" + 1 commit,");
+      expect(result.stderr).not.toContain("partial clone without");
+      expect(cloneState(f.remoteClone)).toBe(before);
+      expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  computeHost("compute: runs in the cached workspace instead of falling back to this Mac", () => {
+    const f = fixture({ remoteClone: "partial", pullRequest: true });
+    try {
+      computeConfig(f);
+      const result = hostRun(f, f.local, ["--mode=heavy", "--label=pr-build", "--", "sh", "-c",
+        "echo forwarded=${LOCAL_EFFICIENCY_FORWARDED:-0}; pwd; tail -n 1 x.txt"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stderr).not.toContain("on this Mac");
+      expect(result.stdout).toContain(`forwarded=1\n${join(workspaceRoot(f), "slot-1", "tree")}\na pull request line\n`);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  computeHost("mac-ui-remote.sh applies the payload in a throwaway tree and leaves the clone alone", () => {
+    const f = fixture({ remoteClone: "partial", pullRequest: true });
+    try {
+      const head = sh(f.local, "git rev-parse HEAD");
+      const before = cloneState(f.remoteClone);
+      const result = runRemoteHalf(f, forwardedPayload(f), head, "git rev-parse HEAD; tail -n 1 x.txt; cat later.txt");
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toBe(`${head}\na pull request line\na commit the remote clone lacks\n`);
+      expect(cloneState(f.remoteClone)).toBe(before);
+      expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  computeHost("mac-ui-remote.sh stops with 69 and names the commit when one they build on is gone", () => {
+    const f = fixture();
+    try {
+      const later = sh(f.local, "git rev-parse HEAD");
+      sh(f.local, "git -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit --quiet --allow-empty -m after-later");
+      // As if the clone had `later` when host-run asked and lost it (pruned) before the run.
+      const payload = forwardedPayload(f, (plan) => ({ ...plan, haves: [later] }));
+      const result = runRemoteHalf(f, payload, sh(f.local, "git rev-parse HEAD"), "echo ran");
+      expect(result.status, result.stderr).toBe(forwardUnavailableExitCode);
+      expect(result.stdout).not.toContain("ran");
+      expect(result.stderr).toContain(`the forwarded commits build on ${later}, which ${f.remoteClone} on `);
+      expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+});
+
+describe("forwarding to a partial clone a file it has only an older version of", () => {
+  // A bundle's pack is thin: a changed file can travel as a delta against the
+  // version in the clone's commit, which a blob-less clone never fetched.
+  computeHost("the changed file travels whole and the run happens on the remote", () => {
+    const f = fixture({ remoteClone: "partial", bigFile: true });
+    try {
+      computeConfig(f);
+      const result = hostRun(f, f.local, ["--mode=heavy", "--label=big", "--", "sh", "-c",
+        "echo forwarded=${LOCAL_EFFICIENCY_FORWARDED:-0}; tail -n 1 big.txt"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stderr).not.toContain("on this Mac");
+      expect(result.stderr).toContain("is a partial clone without 3 objects");
+      expect(result.stdout).toContain("forwarded=1\none more line\n");
     } finally {
       rmSync(f.root, { force: true, recursive: true });
     }

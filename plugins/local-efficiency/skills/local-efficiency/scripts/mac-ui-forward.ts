@@ -7,11 +7,12 @@
  * `host-run --lane=mac-ui` inside the user's GUI session, streams the output
  * back, and returns the remote exit code.
  *
- * Transport: a `git bundle` of HEAD (only the commits the remote clone lacks)
- * plus a binary patch of the working tree, sent over the same ssh connection
- * that runs the job. Nothing is pushed to origin and no remote checkout,
- * index or branch is touched: the remote side builds a `git clone --shared`
- * throwaway tree in its own state directory and deletes it afterwards.
+ * Transport: a self-contained pack of the commits the remote clone lacks
+ * (with the list of commits they build on, which the clone has) plus a binary
+ * patch of the working tree, sent over the same ssh connection that runs the
+ * job. Nothing is pushed to origin and no remote checkout, index or branch is
+ * touched: the remote side builds a `git clone --shared` throwaway tree in its
+ * own state directory and deletes it afterwards.
  *
  * No local lease is claimed. The forwarded run uses none of this machine's
  * scarce capabilities, and holding a lease while waiting on another host
@@ -37,7 +38,7 @@ export const forwardUnavailableExitCode = 69;
 export const forwardUnavailableCode = "MAC_UI_FORWARD_FAILED";
 export const remoteScriptPath = join(import.meta.dir, "mac-ui-remote.sh");
 
-/** Largest bundle + patch payload host-run will send. */
+/** Largest payload (commits, missing objects and patch) host-run will send. */
 export const maxPayloadBytes = 512 * 1024 * 1024;
 const queueAllowanceMilliseconds = 2 * 60 * 60_000;
 /** The remote may first wait for its CI machine lock (machine-lock.ts caps that wait at 2 h). */
@@ -534,12 +535,17 @@ export class NoRemoteCloneError extends ForwardUnavailableError {
 }
 
 export type ForwardPlan = {
-  readonly bundleNeeded: boolean;
+  /** The remote clone lacks HEAD, so the commits it lacks travel with the run. */
+  readonly commitsNeeded: boolean;
+  /**
+   * Commits other than HEAD that the remote clone has. Having the object is
+   * what counts; no ref there has to reach it. The sent commits build on these.
+   */
   readonly haves: readonly string[];
   readonly local: LocalRepository;
   /**
-   * Objects HEAD's tree needs that the remote clone lacks and the bundle does
-   * not carry: blobs a partial clone never fetched. Sent as a pack.
+   * Objects HEAD's tree needs that the remote clone lacks and the commit pack
+   * does not carry: blobs a partial clone never fetched. Sent as a pack.
    */
   readonly missing: readonly string[];
   readonly remoteRepository: string;
@@ -575,14 +581,14 @@ export function planForward(
   if (have.status !== 0) throw unreachable(config, have, lane);
   const answer = have.stdout.toString("utf8").split("\n");
   const haves = answer.filter((line) => candidates.includes(line));
-  const bundleNeeded = !haves.includes(local.head);
+  const commitsNeeded = !haves.includes(local.head);
   const bases = haves.filter((sha) => sha !== local.head);
   return {
-    bundleNeeded,
+    commitsNeeded,
     haves: bases,
     local,
     missing: answer.includes("partial")
-      ? findMissingObjects(deps, config, script, local, repository.path, bundleNeeded ? bases : null, lane)
+      ? findMissingObjects(deps, config, script, local, repository.path, commitsNeeded ? bases : null, lane)
       : [],
     remoteRepository: repository.path,
   };
@@ -591,8 +597,8 @@ export function planForward(
 /**
  * Asks a partial remote clone which of HEAD's trees and blobs it lacks. The
  * remote never fetches them itself (it may have no credentials for the
- * origin), so the workstation sends them. `bundleBases` is null when the
- * remote has HEAD; otherwise the bundle carries everything not reachable
+ * origin), so the workstation sends them. `packBases` is null when the
+ * remote has HEAD; otherwise the commit pack carries everything not reachable
  * from those bases, and only the rest is asked about.
  */
 export function findMissingObjects(
@@ -601,10 +607,10 @@ export function findMissingObjects(
   script: string,
   local: LocalRepository,
   remoteRepository: string,
-  bundleBases: readonly string[] | null,
+  packBases: readonly string[] | null,
   lane = "mac-ui",
 ): string[] {
-  if (bundleBases !== null && bundleBases.length === 0) return [];
+  if (packBases !== null && packBases.length === 0) return [];
   const root = gitText(deps, local.root, ["rev-parse", "HEAD^{tree}"], "cannot read the tree of HEAD");
   const listed = gitText(deps, local.root, ["ls-tree", "-r", "-t", "--full-tree", "HEAD"], "cannot list the tree of HEAD");
   const needed = new Set([root]);
@@ -612,9 +618,9 @@ export function findMissingObjects(
     const [, type, id] = line.slice(0, line.indexOf("\t")).split(" ");
     if ((type === "blob" || type === "tree") && id !== undefined) needed.add(id);
   }
-  if (bundleBases !== null) {
-    const bundled = gitText(deps, local.root, ["rev-list", "--objects", "HEAD", "--not", ...bundleBases], "cannot list the bundled objects");
-    for (const line of bundled.split("\n")) needed.delete(line.split(" ")[0]!);
+  if (packBases !== null) {
+    const packed = gitText(deps, local.root, ["rev-list", "--objects", "HEAD", "--not", ...packBases], "cannot list the objects of the commits to send");
+    for (const line of packed.split("\n")) needed.delete(line.split(" ")[0]!);
   }
   if (needed.size === 0) return [];
   const asked = remoteCall(deps, config, script, "missing", [remoteRepository], 120_000, Buffer.from(`${[...needed].join("\n")}\n`));
@@ -743,18 +749,61 @@ function packMissingObjects(deps: ForwardDependencies, plan: ForwardPlan, config
   deps.log(`[host-run] ${lacks}; sending ${count === 1 ? "it" : "them"} (${mib}) to its host-run object store`);
 }
 
-/** Writes `payload.tar` (bundle when needed, missing objects, patch) into scratch and returns its path. */
-export function buildPayload(deps: ForwardDependencies, plan: ForwardPlan, scratch: string, config?: RemoteForwardConfig): string {
+/**
+ * Writes the commits the remote clone lacks to `commits.pack` and the commits
+ * they build on to `prerequisites`, and returns how many commits it packed.
+ *
+ * Not a `git bundle`, for two reasons. Unbundling checks that each
+ * prerequisite connects to the clone's refs by walking every object between
+ * them, so it fails on a commit the clone has but no ref reaches (a pull
+ * request fetched into FETCH_HEAD for a worktree) as soon as the walk meets
+ * file contents a partial clone never fetched. And a bundle's pack is thin: a
+ * changed file can travel as a delta against a version the clone lacks. This
+ * pack is self-contained, and the remote checks only that it has each
+ * prerequisite, which is what `have` reported.
+ */
+function packCommits(deps: ForwardDependencies, plan: ForwardPlan, payloadDirectory: string): number {
+  const listed = git(deps, plan.local.root, ["rev-list", "--boundary", plan.local.head, ...(plan.haves.length === 0 ? [] : ["--not", ...plan.haves])]);
+  if (listed.status !== 0) throw new ForwardUnavailableError(`could not list the commits to send: ${lastLines(listed.stderr)}`);
+  const lines = listed.stdout.toString("utf8").split("\n").filter((line) => line !== "");
+  const prerequisites = lines.filter((line) => line.startsWith("-")).map((line) => line.slice(1));
+  const commits = lines.length - prerequisites.length;
+  // The remote lacks HEAD but has a commit built on it (a shallow clone can):
+  // there is nothing to pack, and the remote stops with "not available".
+  if (commits === 0) return 0;
+  const packPath = join(payloadDirectory, "commits.pack");
+  const packed = deps.run(["/bin/sh", "-c", 'exec git pack-objects --revs --stdout --delta-base-offset -q >"$1"', "pack-commits", packPath], {
+    cwd: plan.local.root,
+    env: { ...deps.environment },
+    input: Buffer.from(`${plan.local.head}\n${plan.haves.map((sha) => `^${sha}\n`).join("")}`),
+    timeoutMs: 10 * 60_000,
+  });
+  if (packed.status !== 0 || !existsSync(packPath) || statSync(packPath).size === 0) {
+    throw new ForwardUnavailableError(`could not pack the commits to send: ${lastLines(packed.stderr) || `exit ${packed.status ?? "timeout"}`}`);
+  }
+  writeFileSync(join(payloadDirectory, "prerequisites"), prerequisites.map((sha) => `${sha}\n`).join(""));
+  return commits;
+}
+
+/** What buildPayload wrote: the tar to send, and how many commits travel in it. */
+export type ForwardPayload = {
+  /** 0 when the remote clone already has HEAD. */
+  readonly commits: number;
+  readonly path: string;
+};
+
+/** `0123456789ab + 2 commits`: the forwarded HEAD and the commits sent with it. */
+export function describeForwardedHead(plan: ForwardPlan, payload: ForwardPayload): string {
+  const head = plan.local.head.slice(0, 12);
+  return payload.commits === 0 ? head : `${head} + ${payload.commits} commit${payload.commits === 1 ? "" : "s"}`;
+}
+
+/** Writes `payload.tar` (commits when needed, missing objects, patch) into scratch. */
+export function buildPayload(deps: ForwardDependencies, plan: ForwardPlan, scratch: string, config?: RemoteForwardConfig): ForwardPayload {
   const payloadDirectory = join(scratch, "payload");
   const made = deps.run(["mkdir", "-p", payloadDirectory], { timeoutMs: 10_000 });
   if (made.status !== 0) throw new ForwardUnavailableError("cannot create a scratch directory");
-  if (plan.bundleNeeded) {
-    const bundle = git(deps, plan.local.root, [
-      "bundle", "create", "--quiet", join(payloadDirectory, "bundle"), "HEAD",
-      ...(plan.haves.length === 0 ? [] : ["--not", ...plan.haves]),
-    ]);
-    if (bundle.status !== 0) throw new ForwardUnavailableError(`could not bundle HEAD: ${lastLines(bundle.stderr)}`);
-  }
+  const commits = plan.commitsNeeded ? packCommits(deps, plan, payloadDirectory) : 0;
   if (plan.missing.length > 0) {
     if (config === undefined) throw new ForwardUnavailableError("internal error: missing objects without a forwarding config");
     packMissingObjects(deps, plan, config, join(payloadDirectory, "objects.pack"));
@@ -766,11 +815,11 @@ export function buildPayload(deps: ForwardDependencies, plan: ForwardPlan, scrat
   const size = statSync(tarPath).size;
   if (size > maxPayloadBytes) {
     throw new ForwardUnavailableError(
-      `the forwarded commit bundle and uncommitted changes are ${Math.round(size / 1_048_576)} MiB (limit 512 MiB);`
+      `the forwarded commits and uncommitted changes are ${Math.round(size / 1_048_576)} MiB (limit 512 MiB);`
       + " commit and push large files, or add build output to .gitignore",
     );
   }
-  return tarPath;
+  return { commits, path: tarPath };
 }
 
 export function signalExitCode(signal: NodeJS.Signals): number {
@@ -916,7 +965,7 @@ export async function forwardMacUiRun(
     const deadlineMs = forwardDeadlineMilliseconds(request.maxHoldMilliseconds);
     deps.log(
       `[host-run] forwarding ${request.mode} mac-ui ${request.label} to ${config.forwardTo}`
-      + ` (${plan.local.head.slice(0, 12)}${plan.bundleNeeded ? " + bundle" : ""}, clone ${plan.remoteRepository}, run ${id});`
+      + ` (${describeForwardedHead(plan, payload)}, clone ${plan.remoteRepository}, run ${id});`
       + " no local lease is held while it runs",
     );
     started = true;
@@ -936,7 +985,7 @@ export async function forwardMacUiRun(
         "--",
         ...remoteHostRunArguments(request),
       ],
-      payload,
+      payload.path,
       deadlineMs,
       () => {
         const cancel = remoteCall(deps, config, script, "cancel", [id], 30_000);
