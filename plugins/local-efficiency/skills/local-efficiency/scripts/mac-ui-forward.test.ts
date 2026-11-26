@@ -19,6 +19,7 @@ import {
   ForwardUnavailableError,
   forwardDeadlineMilliseconds,
   forwardUnavailableExitCode,
+  remoteScriptPath,
   newForwardId,
   normalizeOriginUrl,
   originWithoutCredentials,
@@ -235,6 +236,7 @@ describe("mac-ui forwarding command construction", () => {
       bundleNeeded: true,
       haves: [shared],
       local: { head, origin: "git@github.com:o/r.git", prefix: "sub", root: "/repo" },
+      missing: [],
       remoteRepository: "/r/src/r",
     });
     const haveCall = calls.find((argv) => argv[0] === "ssh" && argv.at(-1)!.includes(" have "))!;
@@ -302,7 +304,7 @@ type Fixture = {
   readonly root: string;
 };
 
-function fixture(options: { readonly remoteClone?: boolean; readonly config?: object } = {}): Fixture {
+function fixture(options: { readonly remoteClone?: boolean | "partial"; readonly config?: object } = {}): Fixture {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "le-forward-e2e-")));
   const git = "git -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false";
   const origin = join(root, "origin.git");
@@ -316,7 +318,15 @@ function fixture(options: { readonly remoteClone?: boolean; readonly config?: ob
   const remoteHome = join(root, "remote-home");
   const remoteClone = join(remoteHome, "src", "proj");
   mkdirSync(join(remoteHome, "src"), { recursive: true });
-  if (options.remoteClone !== false) {
+  if (options.remoteClone === "partial") {
+    // A blob-less clone whose promisor remote is gone, like a clone on a Mac
+    // without credentials for the origin: missing blobs cannot be fetched.
+    const served = join(root, "served.git");
+    sh(root, `git clone --quiet --bare ${origin} ${served} && git -C ${served} config uploadpack.allowFilter true`);
+    sh(root, `git clone --quiet --filter=blob:none --no-checkout file://${served} ${remoteClone}`);
+    rmSync(served, { force: true, recursive: true });
+    sh(root, `git -C ${remoteClone} remote set-url origin https://github.com/test/proj.git`);
+  } else if (options.remoteClone !== false) {
     sh(root, `git clone --quiet ${origin} ${remoteClone} && git -C ${remoteClone} remote set-url origin https://github.com/test/proj.git`);
   }
   const local = join(root, "local");
@@ -773,6 +783,95 @@ describe("heavy compute forwarding end to end (fake ssh)", () => {
     expect(() => parseHostRunArguments(["--local", "--local", "--", "true"])).toThrow("only once");
     expect(() => parseHostRunArguments(["--remote", "--remote", "--", "true"])).toThrow("only once");
   });
+});
+
+/** Refs, config, worktree and loose and packed object counts of a remote ~/src clone. */
+function cloneState(clone: string): string {
+  return sh(clone, "git for-each-ref --format='%(refname) %(objectname)'; git config --list --local; git status --porcelain; ls .git/objects/pack | sort; git count-objects");
+}
+
+describe("forwarding to a partial clone (blob-less, origin unreachable)", () => {
+  remoteMac("mac-ui: sends the blobs the clone lacks into host-run's object store once, never into ~/src", () => {
+    const f = fixture({ remoteClone: "partial" });
+    try {
+      const fill = join(f.remoteHome, ".local", "state", "host-run", "fill", "proj");
+      expect(sh(f.remoteClone, "git rev-list --objects --missing=print HEAD | grep -c '^?'")).toBe("3");
+      const before = cloneState(f.remoteClone);
+      // Patch preimages (notes.txt, gone.txt) and an untouched file (sub/keep.txt) are all missing there.
+      const command = ["sh", "-c", "cat ../notes.txt ../sub/keep.txt; test -e ../gone.txt || echo gone-deleted"];
+      const first = hostRun(f, join(f.local, "sub"), ["--lane=mac-ui", "--label=partial", "--", ...command]);
+      expect(first.status, first.stderr).toBe(0);
+      expect(first.stdout).toBe("committed\nplus a local edit\nsub\ngone-deleted\n");
+      expect(first.stderr).toMatch(/fakehost's clone of github\.com\/test\/proj is a partial clone without 3 objects that [0-9a-f]{12} needs; sending them \(\d+ KiB\)/u);
+      expect(existsSync(join(fill, "objects", "pack"))).toBe(true);
+      expect(cloneState(f.remoteClone)).toBe(before);
+      expect(remoteRuns(f)).toEqual([]);
+      // The fill store already has them: nothing is sent again.
+      const second = hostRun(f, join(f.local, "sub"), ["--lane=mac-ui", "--label=partial", "--", ...command]);
+      expect(second.status, second.stderr).toBe(0);
+      expect(second.stdout).toBe(first.stdout);
+      expect(second.stderr).not.toContain("partial clone without");
+      expect(cloneState(f.remoteClone)).toBe(before);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  computeHost("compute: the cached workspace gets the same objects and stays usable", () => {
+    const f = fixture({ remoteClone: "partial" });
+    try {
+      computeConfig(f);
+      const before = cloneState(f.remoteClone);
+      const first = hostRun(f, f.local, ["--mode=heavy", "--label=partial-build", "--", "sh", "-c", "cat notes.txt sub/keep.txt"]);
+      expect(first.status, first.stderr).toBe(0);
+      expect(first.stdout).toContain("plus a local edit\nsub\n");
+      expect(first.stderr).toContain("is a partial clone without 3 objects");
+      writeFileSync(join(f.local, "sub", "keep.txt"), "sub edited\n");
+      const second = hostRun(f, f.local, ["--mode=heavy", "--label=partial-build", "--", "sh", "-c", "cat sub/keep.txt"]);
+      expect(second.status, second.stderr).toBe(0);
+      expect(second.stdout).toContain("sub edited\n");
+      expect(second.stderr).not.toContain("partial clone without");
+      expect(cloneState(f.remoteClone)).toBe(before);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  remoteMac("the remote names a checkout that left files out instead of failing later on the patch", () => {
+    const f = fixture({ remoteClone: "partial" });
+    try {
+      // An older workstation sends no objects: the remote must still say why.
+      const payload = join(f.root, "payload");
+      mkdirSync(payload);
+      writeFileSync(join(payload, "patch"), "");
+      sh(f.root, `tar -cf payload.tar -C ${payload} .`);
+      const sha = sh(f.remoteClone, "git rev-parse HEAD");
+      const result = spawnSync("/bin/bash", [remoteScriptPath, "run", "guard-1", f.remoteClone, sha, "", "direct", "0", "60", "true", "--"], {
+        encoding: "utf8",
+        env: { ...f.env, HOME: f.remoteHome },
+        input: readFileSync(join(f.root, "payload.tar")),
+        timeout: 60_000,
+      });
+      expect(result.status).toBe(forwardUnavailableExitCode);
+      expect(result.stderr).toContain(`checking out ${sha} left 3 tracked files out`);
+      expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  remoteMac("with sending turned off, it stops with a clear reason instead of a patch failure", () => {
+    const f = fixture({ remoteClone: "partial", config: { macUi: { forwardTo: "fakehost", remoteHostRun: hostRunScript, seedMaxMiB: 0 } } });
+    try {
+      const result = hostRun(f, f.local, ["--lane=mac-ui", "--label=partial-off", "--", "true"]);
+      expect(result.status).toBe(forwardUnavailableExitCode);
+      expect(result.stderr).toContain("is a partial clone without 3 objects");
+      expect(result.stderr).toContain("sending objects is off (seedMaxMiB is 0");
+      expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
 });
 
 function presenceConfig(f: Fixture, facts: object, extra: object = {}): NodeJS.ProcessEnv {

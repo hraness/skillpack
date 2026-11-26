@@ -289,6 +289,21 @@ clone in `~/src` wins over a seed when both exist.
 - It sends Git objects only. Credentials, Git config, hooks and Git LFS
   content stay on this Mac.
 
+### Partial clones
+
+A clone made with `--filter=blob:none` fetches file contents on demand, which
+fails on a Mac without credentials for the origin. When the remote clone is a
+partial clone, host-run asks it which of the commit's files and directories
+it lacks (without letting it fetch), packs exactly those objects here, and
+sends them in the same ssh stream with their count and size. The remote keeps
+them in a host-run object store under `~/.local/state/host-run/fill/<name>`
+that its throwaway trees and build workspaces read from, so each object
+travels once. The clone in `~/src` is never written. The pack counts against
+`seedMaxMiB`; when it is larger, or `seedMaxMiB` is 0, the run stops with
+exit 69 and suggests running `git fetch` in that clone. A checkout that still
+leaves tracked files out also stops with that reason, before the command
+runs.
+
 ## Heavy compute forwarding
 
 A workstation can send its heavy builds to a less loaded Mac. Add a

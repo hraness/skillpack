@@ -394,22 +394,28 @@ export type ForwardDependencies = {
   /** Runs a short command to completion. */
   readonly run: (
     argv: readonly string[],
-    options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv; readonly timeoutMs: number },
+    options: RunOptions,
   ) => RunResult;
   readonly environment: Readonly<NodeJS.ProcessEnv>;
   readonly log: (line: string) => void;
 };
 
-function systemRun(
-  argv: readonly string[],
-  options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv; readonly timeoutMs: number },
-): RunResult {
+export type RunOptions = {
+  readonly cwd?: string;
+  readonly env?: NodeJS.ProcessEnv;
+  /** Written to the command's stdin; stdin is closed otherwise. */
+  readonly input?: Buffer;
+  readonly timeoutMs: number;
+};
+
+function systemRun(argv: readonly string[], options: RunOptions): RunResult {
   const [program, ...rest] = argv;
   const result = spawnSync(program!, rest, {
     cwd: options.cwd,
     env: options.env,
+    ...(options.input === undefined ? {} : { input: options.input }),
     maxBuffer: maxPayloadBytes,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     timeout: options.timeoutMs,
   });
   return {
@@ -443,10 +449,12 @@ export function git(
   cwd: string,
   arguments_: readonly string[],
   environment?: NodeJS.ProcessEnv,
+  input?: Buffer,
 ): RunResult {
   return deps.run(["git", ...arguments_], {
     cwd,
     env: environment ?? { ...deps.environment },
+    ...(input === undefined ? {} : { input }),
     timeoutMs: 120_000,
   });
 }
@@ -492,9 +500,11 @@ export function remoteCall(
   subcommand: string,
   arguments_: readonly string[],
   timeoutMs = 60_000,
+  input?: Buffer,
 ): RunResult {
   return deps.run(sshCommand(config.forwardTo, script, subcommand, arguments_), {
     env: { ...deps.environment },
+    ...(input === undefined ? {} : { input }),
     timeoutMs,
   });
 }
@@ -527,6 +537,11 @@ export type ForwardPlan = {
   readonly bundleNeeded: boolean;
   readonly haves: readonly string[];
   readonly local: LocalRepository;
+  /**
+   * Objects HEAD's tree needs that the remote clone lacks and the bundle does
+   * not carry: blobs a partial clone never fetched. Sent as a pack.
+   */
+  readonly missing: readonly string[];
   readonly remoteRepository: string;
 };
 
@@ -558,13 +573,53 @@ export function planForward(
   ])];
   const have = remoteCall(deps, config, script, "have", [repository.path, ...candidates]);
   if (have.status !== 0) throw unreachable(config, have, lane);
-  const haves = have.stdout.toString("utf8").split("\n").filter((line) => candidates.includes(line));
+  const answer = have.stdout.toString("utf8").split("\n");
+  const haves = answer.filter((line) => candidates.includes(line));
+  const bundleNeeded = !haves.includes(local.head);
+  const bases = haves.filter((sha) => sha !== local.head);
   return {
-    bundleNeeded: !haves.includes(local.head),
-    haves: haves.filter((sha) => sha !== local.head),
+    bundleNeeded,
+    haves: bases,
     local,
+    missing: answer.includes("partial")
+      ? findMissingObjects(deps, config, script, local, repository.path, bundleNeeded ? bases : null, lane)
+      : [],
     remoteRepository: repository.path,
   };
+}
+
+/**
+ * Asks a partial remote clone which of HEAD's trees and blobs it lacks. The
+ * remote never fetches them itself (it may have no credentials for the
+ * origin), so the workstation sends them. `bundleBases` is null when the
+ * remote has HEAD; otherwise the bundle carries everything not reachable
+ * from those bases, and only the rest is asked about.
+ */
+export function findMissingObjects(
+  deps: ForwardDependencies,
+  config: RemoteForwardConfig,
+  script: string,
+  local: LocalRepository,
+  remoteRepository: string,
+  bundleBases: readonly string[] | null,
+  lane = "mac-ui",
+): string[] {
+  if (bundleBases !== null && bundleBases.length === 0) return [];
+  const root = gitText(deps, local.root, ["rev-parse", "HEAD^{tree}"], "cannot read the tree of HEAD");
+  const listed = gitText(deps, local.root, ["ls-tree", "-r", "-t", "--full-tree", "HEAD"], "cannot list the tree of HEAD");
+  const needed = new Set([root]);
+  for (const line of listed.split("\n")) {
+    const [, type, id] = line.slice(0, line.indexOf("\t")).split(" ");
+    if ((type === "blob" || type === "tree") && id !== undefined) needed.add(id);
+  }
+  if (bundleBases !== null) {
+    const bundled = gitText(deps, local.root, ["rev-list", "--objects", "HEAD", "--not", ...bundleBases], "cannot list the bundled objects");
+    for (const line of bundled.split("\n")) needed.delete(line.split(" ")[0]!);
+  }
+  if (needed.size === 0) return [];
+  const asked = remoteCall(deps, config, script, "missing", [remoteRepository], 120_000, Buffer.from(`${[...needed].join("\n")}\n`));
+  if (asked.status !== 0) throw unreachable(config, asked, lane);
+  return asked.stdout.toString("utf8").split("\n").filter((id) => needed.has(id));
 }
 
 /** `https://user:token@host/o/r` -> `https://host/o/r`; scp-style `git@host:o/r` is kept. */
@@ -660,8 +715,36 @@ export function planOrSeed(
   }
 }
 
-/** Writes `payload.tar` (bundle when needed, patch) into scratch and returns its path. */
-export function buildPayload(deps: ForwardDependencies, plan: ForwardPlan, scratch: string): string {
+/**
+ * Packs the objects a partial remote clone lacks into `objects.pack`, within
+ * the seed limit, and says how many and how large.
+ */
+function packMissingObjects(deps: ForwardDependencies, plan: ForwardPlan, config: RemoteForwardConfig, path: string): void {
+  const count = plan.missing.length;
+  const name = normalizeOriginUrl(plan.local.origin);
+  const limit = config.seedMaxBytes ?? defaultSeedMaxMiB * 1_048_576;
+  const lacks = `${config.forwardTo}'s clone of ${name} is a partial clone without ${count} object${count === 1 ? "" : "s"} that ${plan.local.head.slice(0, 12)} needs`;
+  if (limit === 0) {
+    throw new ForwardUnavailableError(`${lacks}, and sending objects is off (seedMaxMiB is 0 in ${config.source}); run git fetch in ${plan.remoteRepository} there`);
+  }
+  const packed = git(deps, plan.local.root, ["pack-objects", "--stdout", "-q"], undefined, Buffer.from(`${plan.missing.join("\n")}\n`));
+  if (packed.status !== 0 || packed.stdout.length === 0) {
+    throw new ForwardUnavailableError(`${lacks}, and this Mac could not pack them: ${lastLines(packed.stderr) || `exit ${packed.status ?? "timeout"}`}`);
+  }
+  const size = packed.stdout.length;
+  const mib = size < 1_048_576 ? `${Math.max(1, Math.round(size / 1024))} KiB` : `${Math.round((size / 1_048_576) * 10) / 10} MiB`;
+  if (size > limit) {
+    throw new ForwardUnavailableError(
+      `${lacks} (${mib}, more than seedMaxMiB ${Math.round(limit / 1_048_576)} in ${config.source});`
+      + ` run git fetch in ${plan.remoteRepository} there, or raise seedMaxMiB`,
+    );
+  }
+  writeFileSync(path, packed.stdout);
+  deps.log(`[host-run] ${lacks}; sending ${count === 1 ? "it" : "them"} (${mib}) to its host-run object store`);
+}
+
+/** Writes `payload.tar` (bundle when needed, missing objects, patch) into scratch and returns its path. */
+export function buildPayload(deps: ForwardDependencies, plan: ForwardPlan, scratch: string, config?: RemoteForwardConfig): string {
   const payloadDirectory = join(scratch, "payload");
   const made = deps.run(["mkdir", "-p", payloadDirectory], { timeoutMs: 10_000 });
   if (made.status !== 0) throw new ForwardUnavailableError("cannot create a scratch directory");
@@ -671,6 +754,10 @@ export function buildPayload(deps: ForwardDependencies, plan: ForwardPlan, scrat
       ...(plan.haves.length === 0 ? [] : ["--not", ...plan.haves]),
     ]);
     if (bundle.status !== 0) throw new ForwardUnavailableError(`could not bundle HEAD: ${lastLines(bundle.stderr)}`);
+  }
+  if (plan.missing.length > 0) {
+    if (config === undefined) throw new ForwardUnavailableError("internal error: missing objects without a forwarding config");
+    packMissingObjects(deps, plan, config, join(payloadDirectory, "objects.pack"));
   }
   writeFileSync(join(payloadDirectory, "patch"), workingTreePatch(deps, plan.local.root, scratch));
   const tarPath = join(scratch, "payload.tar");
@@ -824,7 +911,7 @@ export async function forwardMacUiRun(
   let started = false;
   try {
     const plan = planOrSeed(deps, config, script, request.cwd);
-    const payload = buildPayload(deps, plan, scratch);
+    const payload = buildPayload(deps, plan, scratch, config);
     const launcher = deps.environment.LOCAL_EFFICIENCY_REMOTE_LAUNCHER === "direct" ? "direct" : "launchd";
     const deadlineMs = forwardDeadlineMilliseconds(request.maxHoldMilliseconds);
     deps.log(
