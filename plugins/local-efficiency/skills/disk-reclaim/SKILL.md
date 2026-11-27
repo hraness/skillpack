@@ -6,9 +6,8 @@ description: >-
   growth, or when previewing, running or tuning deterministic node cleanup with
   `oh-router reclaim`, plus the legacy `oh reclaim` pass for the targets the
   Router does not cover yet. Do not use for Git worktree removal by exact path
-  (use local-efficiency's worktree-cleanup), for transcript routing or
-  sanitization rules (use session-transcripts), or to delete backups, model
-  weights, credentials or source.
+  (use local-efficiency's worktree-cleanup), or to delete backups, model
+  weights, credentials, session transcripts or source.
 ---
 
 # Node disk reclaim
@@ -19,12 +18,12 @@ legacy pass only for what the Router does not cover.
 | Tool | Covers | Schedule |
 | --- | --- | --- |
 | `oh-router reclaim` (OH Router, `ohd`) | Build output in linked Git worktrees under the scan roots (`~/src` by default), stale package-cache entries, and finished linked worktrees | `ohd` runs it every 15 minutes; it applies only under disk pressure |
-| `oh reclaim` (legacy OH CLI) | Trash, finished Claude background jobs, `.local/tmp` scratch, dead Claude session scratchpads, temp-dir runtime caches, caches of uninstalled apps, Time Machine local snapshots, and session transcript sync | Manual only |
+| `oh reclaim` (legacy OH CLI) | Trash, finished Claude background jobs, `.local/tmp` scratch, dead Claude session scratchpads, temp-dir runtime caches, caches of uninstalled apps, and Time Machine local snapshots | Manual only |
 
 Read [reclaim targets and strict exclusions](references/targets-and-boundaries.md)
 before adding a deletion target or approving a removal by hand. Never delete
 active worktrees, primary checkout build directories, `.local` release staging
-directories, unverified transcripts, backups, model weights, or credentials
+directories, session transcripts, backups, model weights, or credentials
 without the owner's explicit approval for that exact path.
 
 ## Router reclaim (`oh-router reclaim`)
@@ -63,14 +62,15 @@ It stays installed and working for the targets above that the Router does not
 cover, but it no longer receives updates. Run it by hand only:
 
 ```sh
-oh reclaim --json                  # dry run: status and transcript breakdown, deletes and pushes nothing
-oh reclaim --apply --no-transcripts   # disk targets only
-oh reclaim --apply                 # disk targets plus transcript sync and >14d transcript reclaim
+oh reclaim --json --no-transcripts            # dry run: deletes nothing
+oh reclaim --apply --no-transcripts           # disk targets only
 oh reclaim --pressure-only --json  # build-cache check used under disk pressure (add --apply to run it)
 ```
 
-- Always read the dry run first. `--apply` with transcripts also pushes to
-  GitHub; follow the session-transcripts skill before running it.
+- Always read the dry run first, and always pass `--no-transcripts`. Session
+  transcript sync is retired: an `oh` release older than the retirement still
+  pushes transcripts and deletes idle local copies without that flag, and
+  newer releases accept it and do nothing. Never run `oh transcripts`.
 - Each full `--apply` writes a receipt to `<stateDir>/reclaim/status.json`
   and appends to `<stateDir>/reclaim/reclaim.log`. A full pass that ends below
   the low-space alert threshold (10% of the volume, 1 to 60 GiB) or reports
