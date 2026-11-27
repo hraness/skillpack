@@ -240,6 +240,7 @@ describe("mac-ui forwarding command construction", () => {
       haves: [shared],
       local: { head, origin: "git@github.com:o/r.git", prefix: "sub", root: "/repo" },
       missing: [],
+      partial: false,
       remoteRepository: "/r/src/r",
     });
     const haveCall = calls.find((argv) => argv[0] === "ssh" && argv.at(-1)!.includes(" have "))!;
@@ -317,6 +318,13 @@ type FixtureOptions = {
   /** The first commit has big.txt, and the local commit adds a line to it. */
   readonly bigFile?: boolean;
   /**
+   * Before the remote clone is made, origin's main gains a fix (fix.txt) and
+   * branch `older` stays at the first commit. The local commit is made on a
+   * branch from `older` with the fix cherry-picked, so fix.txt's contents are
+   * in origin/main but not in the commit the sent ones build on.
+   */
+  readonly cherryPick?: boolean;
+  /**
    * After the remote clone is made, origin's main gains a commit that adds
    * x.txt and a pull request branch `pr` changes it. The remote clone fetches
    * `pr` into FETCH_HEAD only and checks it out in a worktree outside ~/src,
@@ -339,6 +347,10 @@ function fixture(options: FixtureOptions = {}): Fixture {
   writeFileSync(join(seed, "sub", "keep.txt"), "sub\n");
   if (options.bigFile === true) writeFileSync(join(seed, "big.txt"), numberedLines("big"));
   sh(seed, `${git} add -A && ${git} commit --quiet -m seed && git remote add origin ${origin} && git push --quiet origin main`);
+  if (options.cherryPick === true) {
+    writeFileSync(join(seed, "fix.txt"), "a fix made on main\n");
+    sh(seed, `git branch older && ${git} add fix.txt && ${git} commit --quiet -m fix && git push --quiet origin main older`);
+  }
   const remoteHome = join(root, "remote-home");
   const remoteClone = join(remoteHome, "src", "proj");
   mkdirSync(join(remoteHome, "src"), { recursive: true });
@@ -369,6 +381,8 @@ function fixture(options: FixtureOptions = {}): Fixture {
   const local = join(root, "local");
   sh(root, `git clone --quiet ${origin} ${local}`);
   if (options.pullRequest === true) sh(local, "git switch --quiet -c topic origin/pr");
+  // -x: made in the same second as the fix, the cherry-pick would otherwise be that very commit.
+  if (options.cherryPick === true) sh(local, `git switch --quiet -c topic origin/older && ${git} cherry-pick -x origin/main`);
   writeFileSync(join(local, "later.txt"), "a commit the remote clone lacks\n");
   if (options.bigFile === true) writeFileSync(join(local, "big.txt"), `${numberedLines("big")}one more line\n`);
   sh(local, `${git} add -A && ${git} commit --quiet -m later && git remote set-url origin git@github.com:test/proj.git`);
@@ -644,7 +658,7 @@ describe("remote repository names and seeding", () => {
   });
 
   remoteMac("seeds a repository the remote lacks into host-run state, never ~/src, then sends only new commits", () => {
-    const f = fixture({ remoteClone: false });
+    const f = fixture({ remoteClone: false, bigFile: true });
     try {
       const first = hostRun(f, f.local, ["--lane=mac-ui", "--label=seeded", "--", "git", "rev-parse", "HEAD"]);
       expect(first.status, first.stderr).toBe(0);
@@ -659,9 +673,11 @@ describe("remote repository names and seeding", () => {
       expect(second.status, second.stderr).toBe(0);
       expect(second.stderr).not.toContain("one-time copy");
       expect(second.stderr).not.toMatch(/ \+ \d+ commits?,/u);
-      // A new commit travels in a small pack and advances the seed. The local
-      // commit origin lacks travels again: no ref here says the seed has it.
-      sh(f.local, "git -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit --quiet --allow-empty -m next");
+      // A new commit travels in a thin pack, which the seed completes from
+      // its own big.txt, and advances the seed. The local commit origin lacks
+      // travels again: no ref here says the seed has it.
+      writeFileSync(join(f.local, "big.txt"), `${numberedLines("big")}one more line\nand one after it\n`);
+      sh(f.local, "git -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit --quiet -m next big.txt");
       const third = hostRun(f, f.local, ["--lane=mac-ui", "--label=seeded", "--", "git", "rev-parse", "HEAD"]);
       expect(third.status, third.stderr).toBe(0);
       expect(third.stderr).toContain(" + 2 commits, ");
@@ -924,6 +940,26 @@ function forwardedPayload(f: Fixture, adjust: (plan: ForwardPlan) => ForwardPlan
   return readFileSync(join(scratch, "payload.tar"));
 }
 
+/** The commits.pack inside a payload. */
+function commitPackOf(f: Fixture, payload: Buffer): Buffer {
+  const directory = mkdtempSync(join(f.root, "unpacked-"));
+  const untar = spawnSync("tar", ["-xf", "-", "-C", directory], { input: payload });
+  if (untar.status !== 0) throw new Error(`tar: ${untar.stderr}`);
+  return readFileSync(join(directory, "commits.pack"));
+}
+
+/** Indexes a pack in an empty repository, where a thin pack cannot be completed. */
+function indexAlone(f: Fixture, pack: Buffer) {
+  const repository = mkdtempSync(join(f.root, "alone-"));
+  sh(repository, "git init --quiet --bare .");
+  const indexed = spawnSync("git", ["index-pack", "--stdin"], { cwd: repository, encoding: "utf8", input: pack });
+  return {
+    has: (id: string) => spawnSync("git", ["cat-file", "-e", id], { cwd: repository }).status === 0,
+    status: indexed.status,
+    stderr: indexed.stderr,
+  };
+}
+
 /** Runs `mac-ui-remote.sh run` here as ssh would on the remote Mac (direct launcher), with `sh -c SCRIPT` as the command. */
 function runRemoteHalf(f: Fixture, payload: Buffer, sha: string, script: string) {
   return spawnSync("/bin/bash", [remoteScriptPath, "run", `direct-${process.pid}`, f.remoteClone, sha, "", "direct", "0", "60", "/bin/sh", "--", "-c", script], {
@@ -1004,6 +1040,37 @@ describe("forwarding commits built on ones the remote clone has but no ref reach
       rmSync(f.root, { force: true, recursive: true });
     }
   }, 120_000);
+
+  computeHost("mac-ui-remote.sh takes only full commit names, SHA-1 or SHA-256", () => {
+    const f = fixture();
+    try {
+      const head = sh(f.remoteClone, "git rev-parse HEAD");
+      const payload = (prerequisites: string): Buffer => {
+        const directory = mkdtempSync(join(f.root, "payload-"));
+        writeFileSync(join(directory, "patch"), "");
+        if (prerequisites !== "") writeFileSync(join(directory, "prerequisites"), prerequisites);
+        sh(directory, "tar -cf ../payload.tar .");
+        return readFileSync(join(f.root, "payload.tar"));
+      };
+      for (const sha of [head.slice(0, 12), `${head}0`, head.toUpperCase(), "a".repeat(63)]) {
+        const result = runRemoteHalf(f, payload(""), sha, "echo ran");
+        expect(result.status).toBe(forwardUnavailableExitCode);
+        expect(result.stderr).toContain(`invalid commit: ${sha}`);
+      }
+      // A 64-digit name passes the check and is then looked for.
+      const sha256 = runRemoteHalf(f, payload(""), "a".repeat(64), "echo ran");
+      expect(sha256.status).toBe(forwardUnavailableExitCode);
+      expect(sha256.stderr).toContain(`commit ${"a".repeat(64)} is not available`);
+      const short = runRemoteHalf(f, payload(`${head.slice(0, 39)}\n`), head, "echo ran");
+      expect(short.status).toBe(forwardUnavailableExitCode);
+      expect(short.stdout).not.toContain("ran");
+      expect(short.stderr).toContain(`invalid prerequisite commit in the forwarded payload: ${head.slice(0, 39)}`);
+      expect(runRemoteHalf(f, payload(`${head}\n`), head, "echo ran").stdout).toBe("ran\n");
+      expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
 });
 
 describe("forwarding to a partial clone a file it has only an older version of", () => {
@@ -1019,6 +1086,85 @@ describe("forwarding to a partial clone a file it has only an older version of",
       expect(result.stderr).not.toContain("on this Mac");
       expect(result.stderr).toContain("is a partial clone without 3 objects");
       expect(result.stdout).toContain("forwarded=1\none more line\n");
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+});
+
+describe("the commit pack is thin for a full clone and self-contained for a partial one", () => {
+  // A one-line change to a large file packs to a few hundred bytes thin and
+  // to the whole compressed file otherwise, so a full clone, which has every
+  // file of the commits the new ones build on, gets the thin pack.
+  computeHost("full clone: a changed file travels as a delta, and the remote completes the pack from the clone", () => {
+    const f = fixture({ bigFile: true });
+    try {
+      const head = sh(f.local, "git rev-parse HEAD");
+      const payload = forwardedPayload(f);
+      const thin = commitPackOf(f, payload);
+      const alone = indexAlone(f, thin);
+      expect(alone.status).not.toBe(0);
+      expect(alone.stderr).toContain("unresolved delta");
+      const whole = commitPackOf(f, forwardedPayload(f, (plan) => ({ ...plan, partial: true })));
+      expect(indexAlone(f, whole).status).toBe(0);
+      expect(thin.length).toBeLessThan(whole.length / 2);
+      const before = cloneState(f.remoteClone);
+      const result = runRemoteHalf(f, payload, head, "git rev-parse HEAD; tail -n 1 big.txt; cat later.txt");
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toBe(`${head}\none more line\na commit the remote clone lacks\n`);
+      expect(cloneState(f.remoteClone)).toBe(before);
+      expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  computeHost("partial clone: the changed file travels whole, since the clone lacks the version a delta needs", () => {
+    const f = fixture({ remoteClone: "partial", bigFile: true });
+    try {
+      const head = sh(f.local, "git rev-parse HEAD");
+      const payload = forwardedPayload(f);
+      const alone = indexAlone(f, commitPackOf(f, payload));
+      expect(alone.status, alone.stderr).toBe(0);
+      expect(alone.has(sh(f.local, "git rev-parse HEAD:big.txt"))).toBe(true);
+      const result = runRemoteHalf(f, payload, head, "tail -n 1 big.txt");
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toBe("one more line\n");
+      // A thin pack could not be completed there, and the remote says so.
+      const thin = runRemoteHalf(f, forwardedPayload(f, (plan) => ({ ...plan, partial: false })), head, "echo ran");
+      expect(thin.status).toBe(forwardUnavailableExitCode);
+      expect(thin.stdout).not.toContain("ran");
+      expect(thin.stderr).toMatch(/could not add the forwarded commits: .*unresolved delta/u);
+      expect(remoteRuns(f)).toEqual([]);
+    } finally {
+      rmSync(f.root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  // With a reachability bitmap, pack-objects leaves out everything a commit
+  // the remote has reaches, here origin/main's fix.txt, though the commit the
+  // sent ones build on lacks it. The objects sent to a partial clone leave out
+  // what the commit pack should carry, so fix.txt would travel in neither.
+  computeHost("partial clone: a local bitmap does not keep a cherry-picked fix out of both packs", () => {
+    const f = fixture({ remoteClone: "partial", cherryPick: true });
+    try {
+      sh(f.local, "git repack -a -d -b -q");
+      expect(readdirSync(join(f.local, ".git", "objects", "pack")).some((name) => name.endsWith(".bitmap"))).toBe(true);
+      const fix = sh(f.local, "git rev-parse HEAD:fix.txt");
+      expect(sh(f.local, "git rev-parse origin/main:fix.txt")).toBe(fix);
+      // What pack-objects packs when it may use the bitmap.
+      const bitmapped = spawnSync("git", ["pack-objects", "--revs", "--stdout", "-q"], {
+        cwd: f.local,
+        input: "HEAD\n^origin/main\n^origin/older\n",
+      });
+      expect(bitmapped.status).toBe(0);
+      expect(indexAlone(f, bitmapped.stdout).has(fix)).toBe(false);
+      const payload = forwardedPayload(f);
+      expect(indexAlone(f, commitPackOf(f, payload)).has(fix)).toBe(true);
+      const result = runRemoteHalf(f, payload, sh(f.local, "git rev-parse HEAD"), "cat fix.txt later.txt");
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toBe("a fix made on main\na commit the remote clone lacks\n");
+      expect(remoteRuns(f)).toEqual([]);
     } finally {
       rmSync(f.root, { force: true, recursive: true });
     }

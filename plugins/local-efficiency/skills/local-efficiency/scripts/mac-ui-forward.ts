@@ -7,12 +7,13 @@
  * `host-run --lane=mac-ui` inside the user's GUI session, streams the output
  * back, and returns the remote exit code.
  *
- * Transport: a self-contained pack of the commits the remote clone lacks
- * (with the list of commits they build on, which the clone has) plus a binary
- * patch of the working tree, sent over the same ssh connection that runs the
- * job. Nothing is pushed to origin and no remote checkout, index or branch is
- * touched: the remote side builds a `git clone --shared` throwaway tree in its
- * own state directory and deletes it afterwards.
+ * Transport: a pack of the commits the remote clone lacks (thin for a full
+ * clone, self-contained for a partial one) with the list of commits they
+ * build on, which the clone has, plus a binary patch of the working tree,
+ * sent over the same ssh connection that runs the job. Nothing is pushed to
+ * origin and no remote checkout, index or branch is touched: the remote side
+ * builds a `git clone --shared` throwaway tree in its own state directory and
+ * deletes it afterwards.
  *
  * No local lease is claimed. The forwarded run uses none of this machine's
  * scarce capabilities, and holding a lease while waiting on another host
@@ -548,6 +549,11 @@ export type ForwardPlan = {
    * does not carry: blobs a partial clone never fetched. Sent as a pack.
    */
   readonly missing: readonly string[];
+  /**
+   * The remote clone is a partial clone, so it may lack the old version of a
+   * changed file: its commit pack is self-contained, not thin.
+   */
+  readonly partial: boolean;
   readonly remoteRepository: string;
 };
 
@@ -583,13 +589,13 @@ export function planForward(
   const haves = answer.filter((line) => candidates.includes(line));
   const commitsNeeded = !haves.includes(local.head);
   const bases = haves.filter((sha) => sha !== local.head);
+  const partial = answer.includes("partial");
   return {
     commitsNeeded,
     haves: bases,
     local,
-    missing: answer.includes("partial")
-      ? findMissingObjects(deps, config, script, local, repository.path, commitsNeeded ? bases : null, lane)
-      : [],
+    missing: partial ? findMissingObjects(deps, config, script, local, repository.path, commitsNeeded ? bases : null, lane) : [],
+    partial,
     remoteRepository: repository.path,
   };
 }
@@ -753,14 +759,23 @@ function packMissingObjects(deps: ForwardDependencies, plan: ForwardPlan, config
  * Writes the commits the remote clone lacks to `commits.pack` and the commits
  * they build on to `prerequisites`, and returns how many commits it packed.
  *
- * Not a `git bundle`, for two reasons. Unbundling checks that each
- * prerequisite connects to the clone's refs by walking every object between
- * them, so it fails on a commit the clone has but no ref reaches (a pull
- * request fetched into FETCH_HEAD for a worktree) as soon as the walk meets
- * file contents a partial clone never fetched. And a bundle's pack is thin: a
- * changed file can travel as a delta against a version the clone lacks. This
- * pack is self-contained, and the remote checks only that it has each
+ * Not a `git bundle`: unbundling checks that each prerequisite connects to
+ * the clone's refs by walking every object between them, so it fails on a
+ * commit the clone has but no ref reaches (a pull request fetched into
+ * FETCH_HEAD for a worktree) as soon as the walk meets file contents a
+ * partial clone never fetched. The remote checks only that it has each
  * prerequisite, which is what `have` reported.
+ *
+ * For a full clone the pack is thin, as a bundle's is: a changed file travels
+ * as a delta against its version in a prerequisite's tree, and the remote's
+ * `index-pack --fix-thin` copies that version from the clone. A partial clone
+ * may never have fetched it, so it gets the whole file instead.
+ *
+ * No reachability bitmap: with one, pack-objects leaves out everything any of
+ * the haves reaches, not only what the prerequisites' trees hold. A file a
+ * have shares with HEAD outside those trees (a fix cherry-picked from main
+ * onto an older branch) would then be in neither this pack nor the objects
+ * findMissingObjects sends, and a partial clone could not check it out.
  */
 function packCommits(deps: ForwardDependencies, plan: ForwardPlan, payloadDirectory: string): number {
   const listed = git(deps, plan.local.root, ["rev-list", "--boundary", plan.local.head, ...(plan.haves.length === 0 ? [] : ["--not", ...plan.haves])]);
@@ -772,11 +787,15 @@ function packCommits(deps: ForwardDependencies, plan: ForwardPlan, payloadDirect
   // there is nothing to pack, and the remote stops with "not available".
   if (commits === 0) return 0;
   const packPath = join(payloadDirectory, "commits.pack");
-  const packed = deps.run(["/bin/sh", "-c", 'exec git pack-objects --revs --stdout --delta-base-offset -q >"$1"', "pack-commits", packPath], {
+  const flags = ["--revs", ...(plan.partial ? [] : ["--thin"]), "--no-use-bitmap-index", "--stdout", "--delta-base-offset", "-q"];
+  const packed = deps.run(["/bin/sh", "-c", 'out=$1; shift; exec git pack-objects "$@" >"$out"', "pack-commits", packPath, ...flags], {
     cwd: plan.local.root,
     env: { ...deps.environment },
     input: Buffer.from(`${plan.local.head}\n${plan.haves.map((sha) => `^${sha}\n`).join("")}`),
-    timeoutMs: 10 * 60_000,
+    // Two minutes, like the other git steps here and `git bundle create`
+    // before: a pack at the 512 MiB payload limit takes well under that, and
+    // waiting longer would only delay mac-ui's exit 69 or compute's local run.
+    timeoutMs: 120_000,
   });
   if (packed.status !== 0 || !existsSync(packPath) || statSync(packPath).size === 0) {
     throw new ForwardUnavailableError(`could not pack the commits to send: ${lastLines(packed.stderr) || `exit ${packed.status ?? "timeout"}`}`);

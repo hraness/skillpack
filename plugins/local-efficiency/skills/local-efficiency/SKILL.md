@@ -236,11 +236,13 @@ lane runs locally, so CI and other machines are unchanged. With a
    copy (see [Seeding](#seeding)).
 2. It sends a Git pack of the commits the remote clone lacks and a binary
    patch of every uncommitted change, untracked files included and ignored
-   files excluded, in one ssh stream. The pack holds every object those
-   commits add, so the remote needs only the commits they build on, even when
-   no branch or tag there reaches them, as with a pull request fetched for a
-   worktree. Nothing is pushed to origin. A temporary index is used, so the
-   local index is untouched.
+   files excluded, in one ssh stream. The remote needs only the commits the
+   new ones build on, even when no branch or tag there reaches them, as with
+   a pull request fetched for a worktree. For a full clone, a changed file
+   travels as a Git delta against its version in those commits, so a
+   one-line edit to a large file stays small. A partial clone may never have
+   fetched that version, so it gets the whole file. Nothing is pushed to
+   origin. A temporary index is used, so the local index is untouched.
 3. The remote side makes a `git clone --shared` throwaway tree under
    `~/.local/state/host-run/remote/<id>`, checks out the commit, applies the
    patch, and starts the same command under its own
