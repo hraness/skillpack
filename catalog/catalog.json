@@ -538,7 +538,7 @@
     {
       "name": "disk-reclaim",
       "plugin": "local-efficiency",
-      "owner": "Node disk cleanup with oh-router reclaim and the legacy oh reclaim pass.",
+      "owner": "Node disk cleanup with oh-router reclaim.",
       "positive": [
         "preview or run disk reclaim on a node",
         "explain why free disk space dropped and what cleanup can recover"

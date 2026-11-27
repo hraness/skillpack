@@ -1,5 +1,13 @@
 # Changelog
 
+## local-efficiency 0.12.0 - 2026-11-27
+
+- `disk-reclaim` drops the legacy `oh reclaim` pass; the `oh` CLI is being
+  retired. `oh-router reclaim` is the only automatic cleanup. Trash, Claude
+  jobs and scratchpads, `.local/tmp`, temp-dir runtime caches, uninstalled app
+  caches and Time Machine snapshots are now measured and reported only, and
+  removed by hand after the owner agrees.
+
 ## local-efficiency 0.11.0 - 2026-11-27
 
 - The `session-transcripts` skill is removed. The owner retired session
