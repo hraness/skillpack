@@ -1,5 +1,21 @@
 # Changelog
 
+## local-efficiency 0.10.0 - 2026-11-27
+
+- Two new skills move here from the retired Diocles repository:
+  `disk-reclaim` and `session-transcripts`.
+- `disk-reclaim` starts from `oh-router reclaim`, which covers worktree build
+  output, package caches and finished worktrees on its own 15-minute timer.
+  The legacy `oh reclaim` pass is still documented for the targets the Router
+  does not cover yet: Trash, Claude jobs and scratchpads, `.local/tmp`,
+  temp-dir runtime caches, uninstalled app caches, Time Machine snapshots and
+  transcript sync. The old `report-reclaim` loop and `oh reclaim setup` are
+  retired.
+- `session-transcripts` keeps the same sanitizing, orphan-branch layout and
+  reclaim rules. It says that the fallback for unmapped sessions is still
+  `hraness/diocles`, and that once that repository is archived those sessions
+  are kept locally instead of pushed or reclaimed.
+
 ## local-efficiency 0.9.4 - 2026-11-27
 
 - The skill has a new section, "Offloading whole tasks". It says when to

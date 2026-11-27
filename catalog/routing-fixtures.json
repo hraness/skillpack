@@ -796,6 +796,91 @@
       "excluded": [
         "skillpack-admin"
       ]
+    },
+    {
+      "id": "positive-disk-reclaim",
+      "kind": "positive",
+      "prompt": "Free disk space on this Mac is low; preview what node cleanup would remove.",
+      "expected": [
+        "disk-reclaim"
+      ],
+      "excluded": []
+    },
+    {
+      "id": "negative-disk-reclaim",
+      "kind": "negative",
+      "prompt": "Push this Mac's idle Claude and Codex transcripts to their private repositories.",
+      "expected": [
+        "session-transcripts"
+      ],
+      "excluded": [
+        "disk-reclaim"
+      ]
+    },
+    {
+      "id": "positive-session-transcripts",
+      "kind": "positive",
+      "prompt": "Dry-run transcript sync and show which repository each Claude and Codex session would go to.",
+      "expected": [
+        "session-transcripts"
+      ],
+      "excluded": []
+    },
+    {
+      "id": "negative-session-transcripts",
+      "kind": "negative",
+      "prompt": "Clear stale node_modules and package caches to recover disk space.",
+      "expected": [
+        "disk-reclaim"
+      ],
+      "excluded": [
+        "session-transcripts"
+      ]
+    },
+    {
+      "id": "pairwise-disk-reclaim-local-efficiency",
+      "kind": "pairwise",
+      "prompt": "Disk space dropped on this node; run the deterministic cleanup pass in preview first.",
+      "candidates": [
+        "disk-reclaim",
+        "local-efficiency"
+      ],
+      "expected": [
+        "disk-reclaim"
+      ],
+      "excluded": [
+        "local-efficiency"
+      ]
+    },
+    {
+      "id": "pairwise-disk-reclaim-session-transcripts",
+      "kind": "pairwise",
+      "prompt": "Reclaim local Claude transcripts older than two weeks once they are saved on their transcripts branches.",
+      "candidates": [
+        "disk-reclaim",
+        "session-transcripts"
+      ],
+      "expected": [
+        "session-transcripts"
+      ],
+      "excluded": [
+        "disk-reclaim"
+      ]
+    },
+    {
+      "id": "pairwise-local-efficiency-session-transcripts",
+      "kind": "pairwise",
+      "prompt": "Audit how many local agent session transcripts are still unsynced and which private repository each belongs to.",
+      "candidates": [
+        "local-efficiency",
+        "session-transcripts"
+      ],
+      "expected": [
+        "session-transcripts"
+      ],
+      "excluded": [
+        "local-efficiency"
+      ]
     }
   ]
 }

@@ -63,7 +63,9 @@
       "title": "Local Machine Automation",
       "description": "Coordinate local agent scheduling, bootstrap, browser recovery, and maintenance commands on Hraness development machines.",
       "skills": [
-        "local-efficiency"
+        "local-efficiency",
+        "disk-reclaim",
+        "session-transcripts"
       ]
     }
   ]
