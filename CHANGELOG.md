@@ -1,5 +1,14 @@
 # Changelog
 
+## local-efficiency 0.9.4 - 2026-11-27
+
+- The skill has a new section, "Offloading whole tasks". It says when to
+  send an independent task to another device with
+  `oh-router spawn --device auto --headless --cwd REPO "BRIEF"`, how to
+  follow it with `oh-router ps` and `oh-router inspect`, that its result
+  comes back as a pushed branch or PR, and which work stays here. Guidance
+  only; host-run is unchanged.
+
 ## local-efficiency 0.9.3 - 2026-11-27
 
 - Forwarded runs no longer fail with "could not apply the commit bundle:
