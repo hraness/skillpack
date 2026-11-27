@@ -67,9 +67,9 @@ thresholds.
 7. **Time Machine local snapshots (macOS):** unprivileged `tmutil
    thinlocalsnapshots` and `deletelocalsnapshots`; a warning when `sudo` is
    needed.
-8. **Session transcripts and the Codex SQLite cache:** see the
-   session-transcripts skill. Local transcripts are deleted only after 14 idle
-   days and verified on the remote `transcripts` branch, or classified retired.
+8. **Session transcripts and the Codex SQLite cache:** not a target. Transcript
+   sync was retired on 2026-11-27; run `oh reclaim` with `--no-transcripts` and
+   leave local transcripts and existing `transcripts` branches alone.
 
 `oh reclaim` also prunes worktree build output and package caches with its own
 guards (Git-ignored, no tracked files, nothing open, idle past 12 hours or 2

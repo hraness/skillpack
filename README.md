@@ -2,17 +2,17 @@
 
 [![skills.sh](https://skills.sh/b/hraness/skillpack)](https://skills.sh/hraness/skillpack)
 
-Hraness Agent Skills is a public collection of 36 workflows for AI coding
+Hraness Agent Skills is a public collection of 35 workflows for AI coding
 agents, in five packs. The four portable packs contain 33 workflows;
-`local-efficiency` adds three for Hraness development machines.
+`local-efficiency` adds two for Hraness development machines.
 Eleven cover work in one repository: mapping it,
 explaining how code behaves, assessing a change, writing tests, measuring
 performance, updating docs, and refactoring without changing behavior. Two
 plan multi-phase work and carry it out with independent review of each phase.
 Nineteen come from Rob Cheung’s Semantic Algos: 16 named reasoning methods and
 three skills that compile, run, and present Sem computations. One manages
-installed copies of this pack. Three manage local scheduling, disk reclaim
-and session transcripts on Hraness development machines. Every skill’s source is in this repository. Install only the packs you need, in the agent host you already use.
+installed copies of this pack. Two manage local scheduling and disk reclaim
+on Hraness development machines. Every skill’s source is in this repository. Install only the packs you need, in the agent host you already use.
 
 You don’t need a Hraness account, app, or service to use these skills.
 

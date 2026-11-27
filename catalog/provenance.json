@@ -344,13 +344,6 @@
       "localPaths": [
         "plugins/local-efficiency/skills/disk-reclaim"
       ]
-    },
-    {
-      "name": "session-transcripts",
-      "classification": "original",
-      "localPaths": [
-        "plugins/local-efficiency/skills/session-transcripts"
-      ]
     }
   ]
 }

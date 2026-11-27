@@ -1,5 +1,15 @@
 # Changelog
 
+## local-efficiency 0.11.0 - 2026-11-27
+
+- The `session-transcripts` skill is removed. The owner retired session
+  transcript sync; nothing in the pack syncs, pushes or deletes agent
+  session transcripts any more. Transcripts already pushed to `transcripts`
+  branches and local transcript files are left as they are.
+- `disk-reclaim` no longer mentions transcript sync. The legacy `oh reclaim`
+  pass is always run with `--no-transcripts`, and `oh transcripts` is not
+  run.
+
 ## local-efficiency 0.10.0 - 2026-11-27
 
 - Two new skills move here from the retired Diocles repository:
