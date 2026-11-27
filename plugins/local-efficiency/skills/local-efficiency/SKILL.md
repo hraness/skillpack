@@ -517,6 +517,36 @@ Cmd-Shift-G, enter `~/Applications/HostRun UI.app`, and turn it on. The first
 run that scripts System Events asks for Automation; allow it, or turn on
 System Events under HostRun UI in Privacy & Security > Automation.
 
+## Offloading whole tasks
+
+host-run moves one command. When `oh-router` is installed, an agent can move
+a whole independent task, such as a separate PR or a long build or test
+investigation, to another device:
+
+```sh
+oh-router spawn --device auto --headless --cwd ABSOLUTE-REPO "SELF-CONTAINED BRIEF"
+```
+
+- **When.** The task needs no local browser, native device, private local
+  data or uncommitted changes, and can finish as a pushed branch or PR. Write
+  the brief so a fresh agent can finish it alone: the goal, the repository
+  rules, and how to deliver.
+- **Placement.** `--device auto` starts it on this device while it has a
+  Ready lane and room for another headless session, otherwise on the trusted
+  paired device with the fewest active sessions per core. `spawn` prints
+  `placed on DEVICE: REASON` and the session id.
+- **Follow it.** `oh-router ps` lists local and remote sessions;
+  `oh-router inspect SESSION_ID` shows one session's state and screen,
+  wherever it runs.
+- **Results come through GitHub.** The remote works in a fresh worktree of
+  its own clone, from origin's copy of the branch. Local commits that are not
+  pushed and uncommitted changes stay here, and nothing is copied back.
+  Collect the result as its pushed branch or PR.
+- **Keep here.** Work for the `browser-auth`, `mac-ui` or `mac-native`
+  lanes, and work that reads local-only state, credentials or private data,
+  binds a fixed port or uses an attached device. A `--cwd` that is not a
+  pushed GitHub checkout stays here.
+
 ## Resource modes
 
 Use `shared` for one narrow check, `heavy` for production builds and ordinary
