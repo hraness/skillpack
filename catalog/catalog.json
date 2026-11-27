@@ -531,7 +531,42 @@
         "deliver a multi-phase product change"
       ],
       "adjacent": [
-        "skillpack-admin"
+        "skillpack-admin",
+        "disk-reclaim",
+        "session-transcripts"
+      ]
+    },
+    {
+      "name": "disk-reclaim",
+      "plugin": "local-efficiency",
+      "owner": "Node disk cleanup with oh-router reclaim and the legacy oh reclaim pass.",
+      "positive": [
+        "preview or run disk reclaim on a node",
+        "explain why free disk space dropped and what cleanup can recover"
+      ],
+      "negative": [
+        "remove one approved Git worktree by exact path",
+        "change transcript routing or redaction rules"
+      ],
+      "adjacent": [
+        "local-efficiency",
+        "session-transcripts"
+      ]
+    },
+    {
+      "name": "session-transcripts",
+      "plugin": "local-efficiency",
+      "owner": "Persisting, auditing, and reclaiming Claude Code and Codex session transcripts on private orphan branches.",
+      "positive": [
+        "sync agent session transcripts to their private repositories",
+        "audit where session transcripts are stored and which can be reclaimed"
+      ],
+      "negative": [
+        "free disk space from build output and package caches",
+        "summarize what happened in one agent session"
+      ],
+      "adjacent": [
+        "disk-reclaim"
       ]
     }
   ]

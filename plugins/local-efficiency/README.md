@@ -1,7 +1,10 @@
 # Local Efficiency
 
-Local Efficiency is one optional Agent Skill with bundled Bun scripts for
-Hraness development machines. It installs and audits a managed baseline for
+Local Efficiency is an optional pack of three Agent Skills for Hraness
+development machines: `local-efficiency` with its bundled Bun scripts,
+`disk-reclaim` for node disk cleanup with `oh-router reclaim`, and
+`session-transcripts` for persisting agent session transcripts. The
+`local-efficiency` skill installs and audits a managed baseline for
 Codex and Claude: approval and autonomy guidance, local capability-lane
 scheduling, validation receipts, throughput telemetry, worktree and dev-server
 cleanup, disk guarding, deterministic dev ports, and controlled signed-in

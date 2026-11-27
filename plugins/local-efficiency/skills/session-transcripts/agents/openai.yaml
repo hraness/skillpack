@@ -1,0 +1,6 @@
+interface:
+  display_name: "Session Transcripts"
+  short_description: "Persist and reclaim agent session transcripts"
+  default_prompt: "Use $session-transcripts to dry-run transcript routing and reclaim on this node and summarize where each session would be stored."
+policy:
+  allow_implicit_invocation: true
