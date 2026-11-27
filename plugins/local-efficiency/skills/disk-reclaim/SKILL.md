@@ -4,21 +4,20 @@ description: >-
   Reclaim disk space on Hraness development machines (HRANESS1, HRA2 and other
   OH Router nodes). Use when free disk space drops, when inspecting storage
   growth, or when previewing, running or tuning deterministic node cleanup with
-  `oh-router reclaim`, plus the legacy `oh reclaim` pass for the targets the
-  Router does not cover yet. Do not use for Git worktree removal by exact path
+  `oh-router reclaim`, and for measuring the places it does not clean
+  (Trash, scratchpads, Time Machine snapshots). Do not use for Git worktree removal by exact path
   (use local-efficiency's worktree-cleanup), or to delete backups, model
   weights, credentials, session transcripts or source.
 ---
 
 # Node disk reclaim
 
-Two tools reclaim regenerable disk space on a node. Prefer the Router; use the
-legacy pass only for what the Router does not cover.
+The OH Router is the only tool that deletes anything on a node by itself.
 
-| Tool | Covers | Schedule |
+| What | Covers | Schedule |
 | --- | --- | --- |
 | `oh-router reclaim` (OH Router, `ohd`) | Build output in linked Git worktrees under the scan roots (`~/src` by default), stale package-cache entries, and finished linked worktrees | `ohd` runs it every 15 minutes; it applies only under disk pressure |
-| `oh reclaim` (legacy OH CLI) | Trash, finished Claude background jobs, `.local/tmp` scratch, dead Claude session scratchpads, temp-dir runtime caches, caches of uninstalled apps, and Time Machine local snapshots | Manual only |
+| Places the Router does not clean | Trash, finished Claude background jobs, `.local/tmp` scratch, dead Claude session scratchpads, temp-dir runtime caches, caches of uninstalled apps, and Time Machine local snapshots | Not automated: measure and report; remove by hand only after the owner agrees |
 
 Read [reclaim targets and strict exclusions](references/targets-and-boundaries.md)
 before adding a deletion target or approving a removal by hand. Never delete
@@ -55,51 +54,39 @@ oh-router reclaim --apply          # delete what the preview lists
   under 6, larger byte limits); `--force` writes them anyway and needs the
   owner's approval.
 
-## Legacy pass (`oh reclaim`)
+## Places the Router does not clean
 
-The `oh` CLI is the legacy OH command line built from the Diocles repository.
-It stays installed and working for the targets above that the Router does not
-cover, but it no longer receives updates. Run it by hand only:
+The legacy `oh` CLI and its `oh reclaim` pass are retired; do not run `oh`
+for cleanup. Nothing cleans the places below automatically. Measure them
+without deleting anything and report the sizes:
 
 ```sh
-oh reclaim --json --no-transcripts            # dry run: deletes nothing
-oh reclaim --apply --no-transcripts           # disk targets only
-oh reclaim --pressure-only --json  # build-cache check used under disk pressure (add --apply to run it)
+du -sh ~/.Trash ~/.claude/jobs /private/tmp/claude-$(id -u) "$(getconf DARWIN_USER_TEMP_DIR)" 2>/dev/null
+du -sh ~/src/*/.local/tmp 2>/dev/null
+tmutil listlocalsnapshots /
 ```
 
-- Always read the dry run first, and always pass `--no-transcripts`. Session
-  transcript sync is retired: an `oh` release older than the retirement still
-  pushes transcripts and deletes idle local copies without that flag, and
-  newer releases accept it and do nothing. Never run `oh transcripts`.
-- Each full `--apply` writes a receipt to `<stateDir>/reclaim/status.json`
-  and appends to `<stateDir>/reclaim/reclaim.log`. A full pass that ends below
-  the low-space alert threshold (10% of the volume, 1 to 60 GiB) or reports
-  an operational error sends a macOS notification.
-- Its worktree-artifact and package-cache targets overlap the Router's. When
-  both are installed, let the Router own those and use `oh reclaim` for the
-  rest.
+Remove something here only by hand, for the exact paths the owner agreed to,
+and only within the rules in
+[reclaim targets and strict exclusions](references/targets-and-boundaries.md).
+Never empty the Trash, delete a live session's scratchpad, or remove a Git
+clone, worktree or bundle parked in `.local/tmp` without that approval.
 
-The old scheduled `report-reclaim` loop (`oh reclaim setup`, `oh loop add
---recipe report-reclaim`) and the `computer.oh.reclaim-pressure` launchd timer
-are retired with the Diocles coordination service. Do not register them again;
-the Router's timer replaces them.
+The old scheduled `report-reclaim` loop and the `computer.oh.reclaim-pressure`
+launchd timer are retired. Do not register them again; the Router's timer
+replaces them.
 
 ## Reading the result
 
 - Router preview and receipts list every kept candidate with its reason
   (`denylisted`, `no-project-marker`, held open, too recent, over a limit).
   Treat a reason as the guard working, not as a problem to bypass.
-- `oh reclaim` reports `estimatedBytes` (files targeted) and the measured
-  `freeBeforeGib`, `freeAfterGib` and `freeChangeBytes`. APFS clones can still
+- Measure free space with `df -h` before and after. APFS clones can still
   share blocks after a directory is removed, and other processes change the
   free-space delta.
-- A `Kept N ... .local/tmp entry(ies) that contain git repositories` warning
-  means clones, worktrees, mirrors or bundles are parked in a repo's
-  `.local/tmp`. Check each with `git status` and `git log @{u}..`, then delete
-  finished ones by hand.
-- A `Skipped bunx cache reclaim while a bun or bunx process is running`
-  warning means a long-running tool started through bunx (such as an MCP
-  server) is holding the bunx cache. Stop it if the disk needs the space.
+- Clones, worktrees, mirrors or bundles parked in a repo's `.local/tmp`: check
+  each with `git status` and `git log @{u}..`, then report the finished ones
+  for the owner to approve.
 - `hra-disk-guard janitor --report` (local-efficiency) lists Chrome
   `code_sign_clone` copies and bun staging directories without deleting them.
 - If usage grows while no tool finds eligible cleanup, inspect the largest

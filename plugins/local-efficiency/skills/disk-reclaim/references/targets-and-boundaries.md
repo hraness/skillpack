@@ -1,7 +1,7 @@
 # Reclaim targets and strict exclusions
 
-Both tools measure the macOS Data volume or the Linux home filesystem. Neither
-deletes anything outside the targets listed here.
+The Router measures the macOS Data volume or the Linux home filesystem and
+deletes nothing outside its targets listed here.
 
 ## Router targets (`oh-router reclaim`)
 
@@ -31,49 +31,35 @@ backups, model caches, Playwright browsers, Cargo binaries, Go modules) and any
 path with a `.local`, `.claude`, `.codex`, `.plans`, `.git`, `backups` or
 `application support` component are refused.
 
-## Legacy-only targets (`oh reclaim --apply`)
+## Places the Router does not clean (by hand only)
 
-The low-space alert threshold is 10% of capacity (1 to 60 GiB); the build-cache
-threshold is 15% (1 to 120 GiB). Shorter cutoffs below apply only under those
-thresholds.
+These were the legacy `oh reclaim` targets. That pass is retired and nothing
+cleans them automatically. Measure and report them; remove only the exact
+paths the owner approves, keeping each guard below.
 
-1. **Trash (macOS):** `~/.Trash/*` when readable by the current process (a
-   blocked read is a non-fatal warning).
+1. **Trash (macOS):** `~/.Trash/*`.
 2. **Claude background jobs (`~/.claude/jobs`):** job directories whose
    `state.json` is `done` or `stopped`, or `blocked` and untouched for 3 days.
    Never `pins.json`, a pinned job, or an active job.
-3. **Gitignored scratch in `<repo>/.local/tmp`** (idle 7 days, 24 hours under
-   the alert threshold): each direct child only when `.local/tmp` is a real,
-   owned, Git-ignored directory with no tracked files; `lsof` shows nothing open
-   inside; nothing changed past the cutoff by mtime or ctime (re-checked with
-   `lstat` just before removal); and the child holds no Git storage (no `.git`,
-   bare repository or `*.bundle`). Clones, worktrees, mirrors and bundles are
-   kept and reported. Nothing else under `.local` is in scope.
+3. **Gitignored scratch in `<repo>/.local/tmp`:** a direct child only when
+   `.local/tmp` is Git-ignored with no tracked files, `lsof` shows nothing open
+   inside, it has been idle for days, and it holds no Git storage (no `.git`,
+   bare repository or `*.bundle`). Nothing else under `.local` is in scope.
 4. **Dead Claude session scratchpads** (`/private/tmp/claude-<uid>` on macOS,
-   `/tmp/claude-<uid>` on Linux): `<projectSlug>/<sessionUuid>` directories
-   owned by the current user, untouched for 3 hours, not active or restorable
-   in `cmux` or recent OH runs (fails closed when `cmux` cannot be queried),
-   and not held open (fails closed when `lsof` fails). For live sessions only
-   idle entries inside `scratchpad/` are pruned (24 hours, 6 under pressure).
-   Shared top-level directories and symlinks are never touched.
+   `/tmp/claude-<uid>` on Linux): `<projectSlug>/<sessionUuid>` directories of
+   sessions that are no longer running and not held open. Never a live
+   session's scratchpad, a shared top-level directory or a symlink.
 5. **Temp-dir runtime caches (`$DARWIN_USER_TEMP_DIR`):** Chrome
-   `code_sign_clone.*` copies idle 12 hours and not held open; bun staging
-   directories idle 60 minutes while no bun install runs; `node-compile-cache`,
-   `tsx-<digits>` and `bunx-<digits>-*` entries past their cutoff, never while a
-   bun or bunx process runs, and never sockets or FIFOs.
-6. **Caches of uninstalled macOS apps (`~/Library/Caches` only):** a fixed list
-   of pure cache folders, checked against every known `.app` name in
-   `/Applications` and `~/Applications` first. Never `Application Support`.
-7. **Time Machine local snapshots (macOS):** unprivileged `tmutil
-   thinlocalsnapshots` and `deletelocalsnapshots`; a warning when `sudo` is
-   needed.
-8. **Session transcripts and the Codex SQLite cache:** not a target. Transcript
-   sync was retired on 2026-11-27; run `oh reclaim` with `--no-transcripts` and
-   leave local transcripts and existing `transcripts` branches alone.
-
-`oh reclaim` also prunes worktree build output and package caches with its own
-guards (Git-ignored, no tracked files, nothing open, idle past 12 hours or 2
-under pressure). Prefer the Router for those.
+   `code_sign_clone.*` copies, bun staging directories, `node-compile-cache`,
+   `tsx-<digits>` and `bunx-<digits>-*` entries, never while they are held open
+   or a bun or bunx process runs. `hra-disk-guard janitor --report` lists them.
+6. **Caches of uninstalled macOS apps (`~/Library/Caches` only):** pure cache
+   folders of apps no longer in `/Applications` or `~/Applications`. Never
+   `Application Support`.
+7. **Time Machine local snapshots (macOS):** list with `tmutil
+   listlocalsnapshots /`; thinning or deleting them is the owner's call.
+8. **Session transcripts and the Codex SQLite cache:** never a target. Leave
+   local transcripts and existing `transcripts` branches alone.
 
 ## Strict exclusions (never touch autonomously)
 
