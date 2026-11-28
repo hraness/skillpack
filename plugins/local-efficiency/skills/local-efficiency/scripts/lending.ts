@@ -78,11 +78,16 @@ export function lendingDecision(input: {
   readonly hostParallelism: number;
   readonly now: Date;
   readonly permits: number;
+  /** Live runs that need every permit and are still waiting for them. */
+  readonly waiting?: readonly LendingHolder[];
 }): LendingDecision {
   const { capacity, config, headroom, holders, hostParallelism, now, permits } = input;
   if (permits >= capacity) return { lend: false, reason: "a whole-machine run never borrows" };
   if (holders.some((holder) => holder.permits >= capacity)) {
     return { lend: false, reason: "a whole-machine run holds this host" };
+  }
+  if ((input.waiting ?? []).length > 0) {
+    return { lend: false, reason: "a whole-machine run is waiting for this host" };
   }
   const coresPerPermit = hostParallelism / Math.max(1, capacity);
   const ramping = holders

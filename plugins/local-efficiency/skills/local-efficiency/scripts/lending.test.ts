@@ -31,6 +31,7 @@ function decide(input: {
   readonly holders?: readonly LendingHolder[];
   readonly idleCores: number;
   readonly permits?: number;
+  readonly waiting?: readonly LendingHolder[];
 }) {
   return lendingDecision({
     capacity: 6,
@@ -40,6 +41,7 @@ function decide(input: {
     hostParallelism: 18,
     now,
     permits: input.permits ?? 1,
+    ...(input.waiting === undefined ? {} : { waiting: input.waiting }),
   });
 }
 
@@ -58,6 +60,11 @@ describe("idle-permit lending decision", () => {
       holders: [{ admittedAt: minutesAgo(5), permits: 6 }],
       idleCores: 18,
     })).toEqual({ lend: false, reason: "a whole-machine run holds this host" });
+    // A whole-machine run still waiting for its permits stops new loans, so later runs cannot overtake it.
+    expect(decide({
+      idleCores: 18,
+      waiting: [{ admittedAt: minutesAgo(1), permits: 6 }],
+    })).toEqual({ lend: false, reason: "a whole-machine run is waiting for this host" });
   });
 
   test("counts a new borrower at its full share until the measurement catches up", () => {
@@ -167,14 +174,16 @@ function fakeScheduler(root: string, behavior: { readonly main: "never" | "now" 
   writeFileSync(log, "");
   writeFileSync(modulePath, `
     import { createHash } from "node:crypto";
-    import { appendFileSync, chmodSync, closeSync, openSync, unlinkSync, writeFileSync } from "node:fs";
+    import { appendFileSync, chmodSync, closeSync, openSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
     const behavior = ${JSON.stringify(behavior)};
+    const waitingRoot = ${JSON.stringify(join(root, "state", "whole-machine-waiting-v1"))};
+    const waiting = () => { try { return readdirSync(waitingRoot).length; } catch { return 0; } };
     let leases = 0;
     export function createHostResourceCoordinator(options) {
       const pool = options.profile.id.includes("overflow") ? "overflow" : options.profile.id.startsWith("local-efficiency/v1-") ? "cpu" : "lane";
       return {
         async withLease(claims, callback, leaseOptions = {}) {
-          appendFileSync(${JSON.stringify(log)}, JSON.stringify({ pool, claims, profile: options.profile, stateRoot: options.stateRoot }) + "\\n");
+          appendFileSync(${JSON.stringify(log)}, JSON.stringify({ pool, claims, profile: options.profile, stateRoot: options.stateRoot, waiting: waiting() }) + "\\n");
           const how = pool === "overflow" ? behavior.overflow : pool === "cpu" ? behavior.main : "now";
           if (how === "error") throw Object.assign(new Error("state is unsafe"), { code: "UNSAFE_STATE" });
           if (how !== "now") {
@@ -227,7 +236,7 @@ function hostRun(root: string, modulePath: string, flags: readonly string[], com
   });
 }
 
-const claimsLogged = (log: string): { pool: string; claims: { amount: number }[] }[] =>
+const claimsLogged = (log: string): { pool: string; claims: { amount: number }[]; waiting: number }[] =>
   readFileSync(log, "utf8").trim().split("\n").filter((line) => line !== "").map((line) => JSON.parse(line));
 
 function telemetryEvents(root: string): Record<string, unknown>[] {
@@ -295,7 +304,7 @@ describe("host-run borrows idle permits", () => {
     const root = mkdtempSync(join(tmpdir(), "le-lending-error-"));
     try {
       const { log, modulePath } = fakeScheduler(root, { main: 300, overflow: "error" });
-      const result = hostRun(root, modulePath, ["--mode=heavy", "--local", "--label=fallback"], [process.execPath, "-e", "process.exit(0)"], {
+      const result = hostRun(root, modulePath, ["--mode=shared", "--label=fallback"], [process.execPath, "-e", "process.exit(0)"], {
         LOCAL_EFFICIENCY_TEST_HEADROOM: JSON.stringify({ idleCores: 1_000 }),
       });
       expect(result.exitCode, result.stderr.toString()).toBe(0);
@@ -307,13 +316,14 @@ describe("host-run borrows idle permits", () => {
     }
   });
 
-  test("an exclusive run never borrows and takes every borrowed permit before it starts", () => {
+  test("an exclusive run never borrows, stops new loans while it waits, and takes every borrowed permit before it starts", () => {
     const root = mkdtempSync(join(tmpdir(), "le-lending-exclusive-"));
     try {
-      const { log, modulePath } = fakeScheduler(root, { main: "now", overflow: "now" });
+      const { log, modulePath } = fakeScheduler(root, { main: 200, overflow: "now" });
       const child = `
-        import { readFileSync } from "node:fs";
+        import { readFileSync, readdirSync } from "node:fs";
         const pools = readFileSync(${JSON.stringify(join(root, "claims.log"))}, "utf8").trim().split("\\n").map((line) => JSON.parse(line).pool);
+        if (readdirSync(${JSON.stringify(join(root, "state", "whole-machine-waiting-v1"))}).length !== 0) process.exit(41);
         process.exit(pools.join() === "cpu,overflow" ? 0 : 40);
       `;
       const result = hostRun(root, modulePath, ["--mode=exclusive", "--local", "--label=alone"], [process.execPath, "-e", child], {
@@ -322,7 +332,27 @@ describe("host-run borrows idle permits", () => {
       expect(result.exitCode, result.stderr.toString()).toBe(0);
       const entries = claimsLogged(log);
       expect(entries.map((entry) => entry.pool)).toEqual(["cpu", "overflow"]);
+      // Its record was there while it waited for the CPU pool, and is gone once it ran.
+      expect(entries[0]?.waiting).toBe(1);
       expect(entries[1]?.claims).toEqual([{ amount: permitCapacity(), resource: "cpu" }]);
+      expect(readdirSync(join(root, "state", "whole-machine-waiting-v1"))).toEqual([]);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("a whole-machine run still runs alone when the borrowed-permit pool cannot be used", () => {
+    const root = mkdtempSync(join(tmpdir(), "le-lending-drain-error-"));
+    const marker = join(root, "ran");
+    try {
+      const { log, modulePath } = fakeScheduler(root, { main: "now", overflow: "error" });
+      const result = hostRun(root, modulePath, ["--mode=exclusive", "--local", "--label=alone"], [
+        process.execPath, "-e", `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "")`,
+      ]);
+      expect(result.exitCode, result.stderr.toString()).toBe(0);
+      expect(result.stderr.toString()).toContain("alone cannot use the borrowed-permit pool here; running on its own permits");
+      expect(existsSync(marker)).toBe(true);
+      expect(claimsLogged(log).map((entry) => entry.pool)).toEqual(["cpu", "overflow"]);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }

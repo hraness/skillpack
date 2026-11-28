@@ -1083,13 +1083,15 @@ describe("host-wide resource wrapper", () => {
       `);
       for (const fullCpu of [false, true]) {
         writeFileSync(log, "");
+        // On a 2-permit host the mac-native CPU claim already covers every permit.
+        const wholeMachine = fullCpu || permitCapacity() <= 2;
         const childScript = `
           import { existsSync, readFileSync } from "node:fs";
           const root = ${JSON.stringify(root)};
           if (!existsSync(root + "/mac-native.lock") || !existsSync(root + "/cpu.lock")) process.exit(20);
           const entries = readFileSync(${JSON.stringify(log)}, "utf8").trim().split("\\n").map(JSON.parse);
-          if (entries.length !== ${fullCpu ? 3 : 2} || entries[0].claims[0].resource !== "mac-native" || entries[1].claims[0].amount !== ${fullCpu ? permitCapacity() : Math.min(2, permitCapacity())}) process.exit(21);
-          if (${fullCpu} && !existsSync(root + "/cpu-overflow.lock")) process.exit(22);
+          if (entries.length !== ${wholeMachine ? 3 : 2} || entries[0].claims[0].resource !== "mac-native" || entries[1].claims[0].amount !== ${fullCpu ? permitCapacity() : Math.min(2, permitCapacity())}) process.exit(21);
+          if (${wholeMachine} && !existsSync(root + "/cpu-overflow.lock")) process.exit(22);
           await Bun.write(${JSON.stringify(childMarker)}, "ran");
         `;
         const result = Bun.spawnSync({
@@ -1111,8 +1113,8 @@ describe("host-wide resource wrapper", () => {
         expect(entries[1].profile).toEqual({ id: `local-efficiency/v1-${permitCapacity()}`, capacities: [{ resource: "cpu", limit: permitCapacity() }] });
         expect(entries[1].claims).toEqual([{ resource: "cpu", amount: fullCpu ? permitCapacity() : Math.min(2, permitCapacity()) }]);
         // A whole-machine run also takes every borrowed permit, so no loan runs beside it.
-        expect(entries.length).toBe(fullCpu ? 3 : 2);
-        if (fullCpu) {
+        expect(entries.length).toBe(wholeMachine ? 3 : 2);
+        if (wholeMachine) {
           expect(entries[2].profile).toEqual(overflowProfile(permitCapacity()));
           expect(entries[2].stateRoot).toBe(join(root, "state", `cpu-overflow-v1-${permitCapacity()}`));
           expect(entries[2].claims).toEqual([{ resource: "cpu", amount: permitCapacity() }]);

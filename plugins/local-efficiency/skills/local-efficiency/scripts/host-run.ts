@@ -550,6 +550,11 @@ export function resolveHolderRoot(hostResourceStateRoot: string): string {
   return join(resolve(hostResourceStateRoot, ".."), "holders-v1");
 }
 
+/** Runs that need every CPU permit and are still waiting for them; no loan starts while one exists. */
+export function resolveWholeMachineWaitRoot(hostResourceStateRoot: string): string {
+  return join(resolve(hostResourceStateRoot, ".."), "whole-machine-waiting-v1");
+}
+
 export function resolveAtetRuntimeRoot(
   environment: Readonly<NodeJS.ProcessEnv> = process.env,
   userHome = homedir(),
@@ -1390,10 +1395,10 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
 }
 
 /**
- * Whether a run with this `--max-hold` may be forwarded: at most the hour a
- * forwarded run gets when it names none. A forwarded run holds the other
- * Mac's CI machine lock for its whole run, so a soak there would keep CI
- * steps that need that Mac to themselves waiting for hours.
+ * Whether a run with this `--max-hold` may be forwarded: at most an hour,
+ * which is also the hold a forwarded run gets when it names none. A forwarded
+ * run holds the other Mac's CI machine lock for its whole run, so a soak there
+ * would keep CI steps that need that Mac to themselves waiting for hours.
  */
 export function forwardsHold(maxHoldMilliseconds: number | null | undefined): boolean {
   return maxHoldMilliseconds === undefined
@@ -1456,7 +1461,13 @@ async function placeHeavyCompute(options: HostRunOptions, environment: NodeJS.Pr
   const deps = defaultForwardDependencies(environment);
   const forward = async (): Promise<ComputePlacement | null> => {
     if (compute === null) return null;
-    const outcome = await forwardComputeRun({ ...forwardRequest(options), mode: options.mode as "heavy" | "exclusive" }, compute, deps);
+    // A run that names no hold gets an hour there, so no forwarded run keeps
+    // the remote's CI machine lock longer than forwardsHold allows.
+    const outcome = await forwardComputeRun({
+      ...forwardRequest(options),
+      maxHoldMilliseconds: options.maxHoldMilliseconds ?? defaultRemoteHoldMilliseconds,
+      mode: options.mode as "heavy" | "exclusive",
+    }, compute, deps);
     if (outcome.ran) return { exitCode: outcome.exitCode, kind: "ran" };
     if (options.remote === true) throw new ForwardUnavailableError(`${options.label} was not forwarded: ${outcome.reason}`);
     console.error(`[host-run] running ${options.label} on this Mac: ${outcome.reason}`);
@@ -1669,6 +1680,7 @@ async function runLeasedCommand(
   const stateRoot = options.stateRoot
     ?? resolveHostResourceStateRoot(environment);
   const holderRoot = resolveHolderRoot(stateRoot);
+  const waitingRoot = resolveWholeMachineWaitRoot(stateRoot);
   const queuedAtMonotonic = performance.now();
   const queuedAt = new Date();
   console.error(
@@ -1752,6 +1764,7 @@ async function runLeasedCommand(
     queueTimeoutMilliseconds - Math.round(performance.now() - queuedAtMonotonic),
   );
   let holderPath: string | null = null;
+  let waitingPath: string | null = null;
   try {
     const module = await hostResourceModule(environment);
     const cpuCoordinator = module.createHostResourceCoordinator({
@@ -1856,15 +1869,49 @@ async function runLeasedCommand(
     // borrowed permit before it starts, so it still runs alone.
     const runOnPermits = async (descriptors: readonly number[]): Promise<number> => {
       registerAs("main");
+      releaseHolder(waitingPath);
+      waitingPath = null;
       if (permitCount < capacity) return launch(descriptors, null);
-      return overflowPool().withLease(
-        [{ resource: "cpu", amount: capacity }],
-        (drain) => launch([...descriptors, drain.inheritedFileDescriptor], null),
-        { signal: cancellation.signal, waitTimeoutMilliseconds: remainingWait() },
-      );
+      let launched = false;
+      try {
+        return await overflowPool().withLease(
+          [{ resource: "cpu", amount: capacity }],
+          (drain) => {
+            launched = true;
+            return launch([...descriptors, drain.inheritedFileDescriptor], null);
+          },
+          { signal: cancellation.signal, waitTimeoutMilliseconds: remainingWait() },
+        );
+      } catch (error: unknown) {
+        if (
+          launched
+          || cancellation.signal.aborted
+          || waitTimedOut(error)
+          || hostResourceErrorCode(error, "WAIT_ABORTED")
+          || permissionBoundaryDenied(error)
+        ) {
+          throw error;
+        }
+        // No run can borrow from a pool that cannot be used, so this run is alone.
+        console.error(`[host-run] ${options.label} cannot use the borrowed-permit pool here; running on its own permits`);
+        return launch(descriptors, null);
+      }
     };
     const runWithCpu = async (outerDescriptors: readonly number[]): Promise<number> => {
       if (lending === null || options.mode === "exclusive" || permitCount >= capacity) {
+        if (permitCount >= capacity) {
+          // No loan starts while this run waits, so later runs cannot overtake it by borrowing.
+          pruneStaleHolders(waitingRoot);
+          waitingPath = registerHolder(waitingRoot, {
+            admittedAt: queuedAt.toISOString(),
+            label: options.label,
+            lane: options.lane,
+            mode: options.mode,
+            permits: permitCount,
+            pid: process.pid,
+            version: 1,
+          }, digest.slice(0, 16));
+        }
         return cpuCoordinator.withLease(
           claims,
           (lease) => runOnPermits([...outerDescriptors, lease.inheritedFileDescriptor]),
@@ -1915,6 +1962,7 @@ async function runLeasedCommand(
               hostParallelism,
               now: new Date(),
               permits: permitCount,
+              waiting: readHolders(waitingRoot),
             });
             execution.lendingNote = decision.lend ? "" : decision.reason;
             if (decision.lend) {
@@ -1981,6 +2029,7 @@ async function runLeasedCommand(
     throw error;
   } finally {
     clearInterval(waitReporter);
+    releaseHolder(waitingPath);
     releaseHolder(holderPath);
     for (const signal of cancellationSignals) process.off(signal, cancel);
   }
