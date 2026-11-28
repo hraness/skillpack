@@ -35,6 +35,8 @@ export type ThroughputEvent = {
   readonly mode: ResourceMode;
   readonly outcome: ThroughputOutcome;
   readonly permits: number;
+  /** Present when the run started on borrowed permits. */
+  readonly pool?: "overflow";
   readonly program: string;
   readonly queueMilliseconds: number;
   readonly queuedAt: string;
@@ -153,10 +155,12 @@ export function validateThroughputEvent(value: unknown): ThroughputEvent {
     "scopeDigest",
     "version",
   ];
+  const pooled = "pool" in record;
   if (
-    Object.keys(record).length !== keys.length
+    Object.keys(record).length !== keys.length + (pooled ? 1 : 0)
     || keys.some((key) => !(key in record))
   ) throw new Error("throughput event fields are invalid");
+  if (pooled && record.pool !== "overflow") throw new Error("throughput event pool is invalid");
   if (record.version !== 1) throw new Error("throughput event version is invalid");
   if (
     record.capability !== "compute"

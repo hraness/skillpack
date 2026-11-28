@@ -1,5 +1,29 @@
 # Changelog
 
+## local-efficiency 0.13.0 - 2026-11-28
+
+- host-run lends idle CPU permits. When every permit is held, a `shared` or
+  `heavy` run that has waited 20 seconds may borrow permits from a second
+  pool of the same size, while the cores it would use plus 20% of all cores
+  are idle and at least 25% of memory is free. Before this, long, mostly idle
+  holders such as soaks and emulators could keep every other run on the host
+  queued while most cores sat idle.
+- An `exclusive` run never borrows, and a run that takes every CPU permit
+  waits for borrowed permits to come back before it starts. No new loan
+  starts while such a run waits, and when the borrowed-permit pool cannot be
+  used it runs on its own permits instead of failing.
+- `--status` shows `borrowed=N` and `pool=overflow`; telemetry records
+  `pool: "overflow"` for a borrowed run. `LOCAL_EFFICIENCY_LENDING=off` turns
+  lending off for a run.
+- A heavy run whose `--max-hold` is over an hour, or `none`, now runs on this
+  Mac instead of being forwarded. A forwarded run holds the other Mac's CI
+  machine lock for its whole run, so a soak there could keep CI steps that
+  need that Mac to themselves waiting for hours. `--remote` refuses such a run
+  with exit 69, and a forwarded run that names no hold is stopped after an
+  hour there.
+- The background-priority test no longer fails when the whole check runs at
+  background priority, as it does under host-run while the owner is typing.
+
 ## local-efficiency 0.12.0 - 2026-11-27
 
 - `disk-reclaim` drops the legacy `oh reclaim` pass; the `oh` CLI is being

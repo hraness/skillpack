@@ -44,7 +44,8 @@ export const maxPayloadBytes = 512 * 1024 * 1024;
 const queueAllowanceMilliseconds = 2 * 60 * 60_000;
 /** The remote may first wait for its CI machine lock (machine-lock.ts caps that wait at 2 h). */
 const machineLockAllowanceMilliseconds = 2 * 60 * 60_000;
-const defaultRemoteHoldMilliseconds = 60 * 60_000;
+/** The hold a forwarded run gets when it names none, and the longest hold host-run forwards. */
+export const defaultRemoteHoldMilliseconds = 60 * 60_000;
 const preparationAllowanceMilliseconds = 15 * 60_000;
 const unboundedHoldCeilingMilliseconds = 24 * 60 * 60_000;
 const cancelGraceMilliseconds = 120_000;

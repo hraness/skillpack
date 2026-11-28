@@ -43,6 +43,7 @@ import {
   type RemoteForwardConfig,
   RemoteUnreachableError,
   defaultForwardDependencies,
+  defaultRemoteHoldMilliseconds,
   forwardMacUiRun,
   forwardUnavailableExitCode,
   resolveRemoteConfigs,
@@ -64,6 +65,7 @@ import {
   thisHostName,
 } from "./placement";
 import { type Presence, type PresenceProbe, presenceProbe } from "./presence";
+import { headroomProbe, lendingConfig, lendingDecision } from "./lending";
 
 import {
   commandProgramLabel,
@@ -528,8 +530,29 @@ export function resolveCpuStateRoot(hostResourceStateRoot: string, capacity: num
     : join(resolve(hostResourceStateRoot, ".."), `host-resources-cpu${capacity}`);
 }
 
+/**
+ * The pool that lends idle CPU permits (see lending.ts). Same size as the CPU
+ * pool, in its own directory because the Atet coordinator pins one profile
+ * per directory.
+ */
+export function overflowProfile(capacity: number): {
+  readonly capacities: readonly { readonly limit: number; readonly resource: string }[];
+  readonly id: string;
+} {
+  return { id: `local-efficiency/cpu-overflow-v1-${capacity}`, capacities: [{ resource: "cpu", limit: capacity }] };
+}
+
+export function resolveOverflowStateRoot(hostResourceStateRoot: string, capacity: number): string {
+  return join(resolve(hostResourceStateRoot, ".."), `cpu-overflow-v1-${capacity}`);
+}
+
 export function resolveHolderRoot(hostResourceStateRoot: string): string {
   return join(resolve(hostResourceStateRoot, ".."), "holders-v1");
+}
+
+/** Runs that need every CPU permit and are still waiting for them; no loan starts while one exists. */
+export function resolveWholeMachineWaitRoot(hostResourceStateRoot: string): string {
+  return join(resolve(hostResourceStateRoot, ".."), "whole-machine-waiting-v1");
 }
 
 export function resolveAtetRuntimeRoot(
@@ -953,10 +976,14 @@ function assertInheritedLeaseDescriptors(inherited: InheritedLease): void {
   }
   assertMarker(
     descriptor,
-    [expectedProfileDigest({
-      id: `local-efficiency/v1-${inherited.capacity}`,
-      capacities: [{ resource: "cpu", limit: inherited.capacity }],
-    })],
+    [
+      expectedProfileDigest({
+        id: `local-efficiency/v1-${inherited.capacity}`,
+        capacities: [{ resource: "cpu", limit: inherited.capacity }],
+      }),
+      // A run admitted on borrowed permits holds its CPU lease in the overflow pool.
+      expectedProfileDigest(overflowProfile(inherited.capacity)),
+    ],
     [{ resource: "cpu", amount: inherited.permits }],
   );
 }
@@ -1025,6 +1052,8 @@ export type HolderRecord = {
   readonly permits: number;
   readonly pid: number;
   readonly pidStartToken?: string;
+  /** Set when the run holds borrowed permits from the overflow pool. */
+  readonly pool?: "overflow";
   readonly version: 1;
 };
 
@@ -1123,7 +1152,8 @@ function isValidHolderRecordShape(parsed: unknown): parsed is HolderRecord {
     && typeof candidate.label === "string"
     && typeof candidate.admittedAt === "string"
     && isCapabilityLane(candidate.lane)
-    && (candidate.pidStartToken === undefined || typeof candidate.pidStartToken === "string");
+    && (candidate.pidStartToken === undefined || typeof candidate.pidStartToken === "string")
+    && (candidate.pool === undefined || candidate.pool === "overflow");
 }
 
 function holderProcessMatches(
@@ -1260,7 +1290,8 @@ export function describeHolders(
   if (shown.length === 0) return "held by an unregistered holder (started before holder tracking)";
   const parts = shown.map((holder) => {
     const age = formatDuration(now.getTime() - Date.parse(holder.admittedAt));
-    return `${holder.label} (pid ${holder.pid}, ${holder.mode} ${holder.lane}, ${holder.permits} permits, held ${age})`;
+    const permits = `${holder.permits} ${holder.pool === "overflow" ? "borrowed " : ""}permits`;
+    return `${holder.label} (pid ${holder.pid}, ${holder.mode} ${holder.lane}, ${permits}, held ${age})`;
   });
   const more = (relevant.length > 0 ? relevant : holders).length - shown.length;
   return `held by ${parts.join("; ")}${more > 0 ? ` and ${more} more` : ""}`;
@@ -1275,6 +1306,35 @@ function waitTimedOut(error: unknown): boolean {
   }
   return false;
 }
+
+function hostResourceErrorCode(error: unknown, code: string): boolean {
+  let current = error;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (typeof current !== "object" || current === null) return false;
+    if ("code" in current && current.code === code) return true;
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return false;
+}
+
+/** Resolves true after `milliseconds`, or false as soon as `signal` aborts. */
+function pause(milliseconds: number, signal: AbortSignal): Promise<boolean> {
+  return new Promise((resolveWait) => {
+    if (signal.aborted) return resolveWait(false);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      resolveWait(false);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolveWait(true);
+    }, milliseconds);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** How long one try for borrowed permits waits in the overflow pool's own queue. */
+const borrowAttemptMilliseconds = 2_000;
 
 export class QueueTimeoutError extends Error {
   constructor(label: string, lane: CapabilityLane, waitedMilliseconds: number) {
@@ -1334,6 +1394,17 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
   return await runHere(options, environment, forwarded, watch);
 }
 
+/**
+ * Whether a run with this `--max-hold` may be forwarded: at most an hour,
+ * which is also the hold a forwarded run gets when it names none. A forwarded
+ * run holds the other Mac's CI machine lock for its whole run, so a soak there
+ * would keep CI steps that need that Mac to themselves waiting for hours.
+ */
+export function forwardsHold(maxHoldMilliseconds: number | null | undefined): boolean {
+  return maxHoldMilliseconds === undefined
+    || (maxHoldMilliseconds !== null && maxHoldMilliseconds <= defaultRemoteHoldMilliseconds);
+}
+
 function forwardRequest(options: HostRunOptions): ForwardRequest {
   return {
     artifacts: options.artifacts ?? [],
@@ -1370,15 +1441,33 @@ type ComputePlacement =
  */
 async function placeHeavyCompute(options: HostRunOptions, environment: NodeJS.ProcessEnv): Promise<ComputePlacement> {
   const remote = resolveRemoteConfigs(environment);
-  const compute: ComputeForwardConfig | null = remote.compute !== null
+  const configured: ComputeForwardConfig | null = remote.compute !== null
     && (options.mode === "heavy" || options.mode === "exclusive")
     && remote.compute.modes.includes(options.mode)
     ? remote.compute
     : null;
+  const longRun = configured !== null && options.local !== true && !forwardsHold(options.maxHoldMilliseconds);
+  if (longRun) {
+    const limit = options.maxHoldMilliseconds == null
+      ? "with no time limit"
+      : `for up to ${formatDuration(options.maxHoldMilliseconds)}`;
+    const why = `it may run ${limit}, and a forwarded run holds ${configured.forwardTo}'s CI machine lock for its whole run`;
+    if (options.remote === true) {
+      throw new ForwardUnavailableError(`${options.label} was not forwarded: ${why}. Run it here with --local, or pass --max-hold=60m or less`);
+    }
+    console.error(`[host-run] keeping ${options.label} on this Mac: ${why}; host-run forwards runs of an hour or less`);
+  }
+  const compute = longRun ? null : configured;
   const deps = defaultForwardDependencies(environment);
   const forward = async (): Promise<ComputePlacement | null> => {
     if (compute === null) return null;
-    const outcome = await forwardComputeRun({ ...forwardRequest(options), mode: options.mode as "heavy" | "exclusive" }, compute, deps);
+    // A run that names no hold gets an hour there, so no forwarded run keeps
+    // the remote's CI machine lock longer than forwardsHold allows.
+    const outcome = await forwardComputeRun({
+      ...forwardRequest(options),
+      maxHoldMilliseconds: options.maxHoldMilliseconds ?? defaultRemoteHoldMilliseconds,
+      mode: options.mode as "heavy" | "exclusive",
+    }, compute, deps);
     if (outcome.ran) return { exitCode: outcome.exitCode, kind: "ran" };
     if (options.remote === true) throw new ForwardUnavailableError(`${options.label} was not forwarded: ${outcome.reason}`);
     console.error(`[host-run] running ${options.label} on this Mac: ${outcome.reason}`);
@@ -1582,13 +1671,16 @@ async function runLeasedCommand(
   watch: Watcher | null,
 ): Promise<number> {
   const capacity = permitCapacity();
-  const permitCount = permitsForMode(options.mode, availableParallelism(), options.lane, options.fullCpu);
+  const hostParallelism = availableParallelism();
+  const permitCount = permitsForMode(options.mode, hostParallelism, options.lane, options.fullCpu);
+  const lending = lendingConfig(environment);
   const maxHold = options.maxHoldMilliseconds === undefined
     ? defaultMaxHoldMilliseconds(options.lane, options.mode)
     : options.maxHoldMilliseconds;
   const stateRoot = options.stateRoot
     ?? resolveHostResourceStateRoot(environment);
   const holderRoot = resolveHolderRoot(stateRoot);
+  const waitingRoot = resolveWholeMachineWaitRoot(stateRoot);
   const queuedAtMonotonic = performance.now();
   const queuedAt = new Date();
   console.error(
@@ -1596,8 +1688,16 @@ async function runLeasedCommand(
     + ` (${permitCount}/${capacity} permits`
     + `${maxHold === null ? "" : `, max hold ${formatDuration(maxHold)}`})`,
   );
-  const execution: { admittedAt: Date | null; recorded: boolean; runStartedAt: number | null } = {
+  const execution: {
+    admittedAt: Date | null;
+    lendingNote: string;
+    pool: "main" | "overflow";
+    recorded: boolean;
+    runStartedAt: number | null;
+  } = {
     admittedAt: null,
+    lendingNote: "",
+    pool: "main",
     recorded: false,
     runStartedAt: null,
   };
@@ -1624,6 +1724,7 @@ async function runLeasedCommand(
         mode: options.mode,
         outcome,
         permits: permitCount,
+        ...(execution.pool === "overflow" ? { pool: "overflow" as const } : {}),
         program: commandProgramLabel(options.command[0] ?? "command"),
         queueMilliseconds: Math.max(0, Math.round(
           (execution.runStartedAt ?? performance.now()) - queuedAtMonotonic,
@@ -1654,7 +1755,8 @@ async function runLeasedCommand(
     const waited = performance.now() - queuedAtMonotonic;
     console.error(
       `[host-run] ${options.label} still waiting after ${formatDuration(waited)} for ${options.lane};`
-      + ` ${describeHolders(readHolders(holderRoot), options.lane)}`,
+      + ` ${describeHolders(readHolders(holderRoot), options.lane)}`
+      + (execution.lendingNote === "" ? "" : `; not borrowing: ${execution.lendingNote}`),
     );
   }, Number.isFinite(waitReportMilliseconds) && waitReportMilliseconds >= 10 ? waitReportMilliseconds : 60_000);
   const remainingWait = (): number => Math.max(
@@ -1662,6 +1764,7 @@ async function runLeasedCommand(
     queueTimeoutMilliseconds - Math.round(performance.now() - queuedAtMonotonic),
   );
   let holderPath: string | null = null;
+  let waitingPath: string | null = null;
   try {
     const module = await hostResourceModule(environment);
     const cpuCoordinator = module.createHostResourceCoordinator({
@@ -1692,27 +1795,44 @@ async function runLeasedCommand(
         waitTimeoutMilliseconds: queueTimeoutMilliseconds,
       });
     if (cancellationState.signal !== null) return signalExitCode(cancellationState.signal);
-    const runWithCpu = async (outerDescriptors: readonly number[]): Promise<number> => {
-      return cpuCoordinator.withLease(
-        [{ resource: "cpu", amount: permitCount }],
-        async (lease) => {
+    let overflowCoordinator: HostResourceCoordinator | null = null;
+    const overflowPool = (): HostResourceCoordinator => {
+      overflowCoordinator ??= module.createHostResourceCoordinator({
+        profile: {
+          id: overflowProfile(capacity).id,
+          capacities: overflowProfile(capacity).capacities.map((entry) => ({ ...entry })),
+        },
+        stateRoot: resolveOverflowStateRoot(stateRoot, capacity),
+        waitTimeoutMilliseconds: queueTimeoutMilliseconds,
+      });
+      return overflowCoordinator;
+    };
+    const claims = [{ resource: "cpu", amount: permitCount }] as const;
+    // Marks this run as a holder; a whole-machine run registers before it waits for
+    // borrowed permits, so no new loan starts meanwhile.
+    const registerAs = (pool: "main" | "overflow"): void => {
+      execution.pool = pool;
+      pruneStaleHolders(holderRoot);
+      holderPath = registerHolder(holderRoot, {
+        admittedAt: new Date().toISOString(),
+        label: options.label,
+        lane: options.lane,
+        mode: options.mode,
+        permits: permitCount,
+        pid: process.pid,
+        ...(pool === "overflow" ? { pool: "overflow" as const } : {}),
+        version: 1,
+      }, digest.slice(0, 16));
+    };
+    const launch = async (descriptors: readonly number[], lendingReason: string | null): Promise<number> => {
           execution.admittedAt = new Date();
           execution.runStartedAt = performance.now();
           clearInterval(waitReporter);
           const waitedSeconds = (execution.runStartedAt - queuedAtMonotonic) / 1_000;
           console.error(
-            `[host-run] admitted ${options.label} after ${waitedSeconds.toFixed(1)}s`,
+            `[host-run] admitted ${options.label} after ${waitedSeconds.toFixed(1)}s`
+            + (lendingReason === null ? "" : ` on borrowed permits (${lendingReason})`),
           );
-          pruneStaleHolders(holderRoot);
-          holderPath = registerHolder(holderRoot, {
-            admittedAt: execution.admittedAt.toISOString(),
-            label: options.label,
-            lane: options.lane,
-            mode: options.mode,
-            permits: permitCount,
-            pid: process.pid,
-            version: 1,
-          }, digest.slice(0, 16));
           const childEnvironment = {
             ...environment,
             ...jobEnvironment(permitCount, capacity, environment),
@@ -1731,7 +1851,7 @@ async function runLeasedCommand(
               options.command,
               options.cwd,
               childEnvironment,
-              [...outerDescriptors, lease.inheritedFileDescriptor],
+              descriptors,
               maxHold === null ? null : { label: options.label, maxHoldMilliseconds: maxHold },
               watch,
             );
@@ -1744,12 +1864,145 @@ async function runLeasedCommand(
             record("spawn-error", null);
             throw error;
           }
-        },
-        {
-          signal: cancellation.signal,
-          waitTimeoutMilliseconds: remainingWait(),
-        },
-      );
+    };
+    // Admitted on ordinary permits. A whole-machine run also takes every
+    // borrowed permit before it starts, so it still runs alone.
+    const runOnPermits = async (descriptors: readonly number[]): Promise<number> => {
+      registerAs("main");
+      releaseHolder(waitingPath);
+      waitingPath = null;
+      if (permitCount < capacity) return launch(descriptors, null);
+      let launched = false;
+      try {
+        return await overflowPool().withLease(
+          [{ resource: "cpu", amount: capacity }],
+          (drain) => {
+            launched = true;
+            return launch([...descriptors, drain.inheritedFileDescriptor], null);
+          },
+          { signal: cancellation.signal, waitTimeoutMilliseconds: remainingWait() },
+        );
+      } catch (error: unknown) {
+        if (
+          launched
+          || cancellation.signal.aborted
+          || waitTimedOut(error)
+          || hostResourceErrorCode(error, "WAIT_ABORTED")
+          || permissionBoundaryDenied(error)
+        ) {
+          throw error;
+        }
+        // No run can borrow from a pool that cannot be used, so this run is alone.
+        console.error(`[host-run] ${options.label} cannot use the borrowed-permit pool here; running on its own permits`);
+        return launch(descriptors, null);
+      }
+    };
+    const runWithCpu = async (outerDescriptors: readonly number[]): Promise<number> => {
+      if (lending === null || options.mode === "exclusive" || permitCount >= capacity) {
+        if (permitCount >= capacity) {
+          // No loan starts while this run waits, so later runs cannot overtake it by borrowing.
+          pruneStaleHolders(waitingRoot);
+          waitingPath = registerHolder(waitingRoot, {
+            admittedAt: queuedAt.toISOString(),
+            label: options.label,
+            lane: options.lane,
+            mode: options.mode,
+            permits: permitCount,
+            pid: process.pid,
+            version: 1,
+          }, digest.slice(0, 16));
+        }
+        return cpuCoordinator.withLease(
+          claims,
+          (lease) => runOnPermits([...outerDescriptors, lease.inheritedFileDescriptor]),
+          { signal: cancellation.signal, waitTimeoutMilliseconds: remainingWait() },
+        );
+      }
+      // Wait for ordinary permits as always, and meanwhile borrow idle ones if
+      // this host measurably has room. Whichever pool admits first runs the
+      // command; the other stops waiting, or gives its lease straight back.
+      const lost = Symbol("lost");
+      const race: { winner: "main" | "overflow" | null } = { winner: null };
+      const mainWait = new AbortController();
+      const lenderStop = new AbortController();
+      const stopWaiting = (): void => {
+        mainWait.abort();
+        lenderStop.abort();
+      };
+      cancellation.signal.addEventListener("abort", stopWaiting, { once: true });
+      let lendingReason = "";
+      const claimFor = (pool: "main" | "overflow") =>
+        (lease: HostResourceLease): Promise<number> | typeof lost => {
+          if (race.winner !== null) return lost;
+          race.winner = pool;
+          const descriptors = [...outerDescriptors, lease.inheritedFileDescriptor];
+          if (pool === "main") {
+            lenderStop.abort();
+            return runOnPermits(descriptors);
+          }
+          mainWait.abort();
+          registerAs("overflow");
+          return launch(descriptors, lendingReason);
+        };
+      type Settled = { readonly ok: true; readonly value: number | typeof lost | null }
+        | { readonly ok: false; readonly error: unknown };
+      const settle = (promise: Promise<number | typeof lost | null>): Promise<Settled> =>
+        promise.then((value) => ({ ok: true, value }), (error: unknown) => ({ ok: false, error }));
+      const borrow = async (): Promise<number | typeof lost | null> => {
+        const probe = headroomProbe(environment, hostParallelism);
+        if (!(await pause(lending.graceMilliseconds, lenderStop.signal))) return null;
+        while (race.winner === null && !lenderStop.signal.aborted) {
+          const headroom = probe.sample();
+          if (headroom !== null) {
+            const decision = lendingDecision({
+              capacity,
+              config: lending,
+              headroom,
+              holders: readHolders(holderRoot),
+              hostParallelism,
+              now: new Date(),
+              permits: permitCount,
+              waiting: readHolders(waitingRoot),
+            });
+            execution.lendingNote = decision.lend ? "" : decision.reason;
+            if (decision.lend) {
+              lendingReason = decision.reason;
+              try {
+                return await overflowPool().withLease(claims, claimFor("overflow"), {
+                  signal: lenderStop.signal,
+                  waitTimeoutMilliseconds: borrowAttemptMilliseconds,
+                });
+              } catch (error: unknown) {
+                if (race.winner === "overflow") throw error;
+                if (!hostResourceErrorCode(error, "WAIT_TIMEOUT")) {
+                  if (!hostResourceErrorCode(error, "WAIT_ABORTED")) {
+                    console.error(`[host-run] ${options.label} cannot borrow permits here; waiting for its own`);
+                  }
+                  execution.lendingNote = "";
+                  return null;
+                }
+                execution.lendingNote = "every borrowed permit is in use";
+              }
+            }
+          }
+          const jittered = lending.pollMilliseconds * (0.75 + Math.random() / 2);
+          if (!(await pause(jittered, lenderStop.signal))) return null;
+        }
+        return null;
+      };
+      const main = settle(cpuCoordinator.withLease(claims, claimFor("main"), {
+        signal: mainWait.signal,
+        waitTimeoutMilliseconds: remainingWait(),
+      })).then((settled) => {
+        if (race.winner === null) lenderStop.abort();
+        return settled;
+      });
+      const [fromMain, fromLoan] = await Promise.all([main, settle(borrow())]);
+      cancellation.signal.removeEventListener("abort", stopWaiting);
+      const result = race.winner === "overflow" ? fromLoan : fromMain;
+      if (!result.ok) throw result.error;
+      if (typeof result.value !== "number") throw new Error("host-run lost both CPU admissions");
+      return result.value;
     };
     if (capabilityCoordinator === null) return await runWithCpu([]);
     return await capabilityCoordinator.withLease(
@@ -1776,6 +2029,7 @@ async function runLeasedCommand(
     throw error;
   } finally {
     clearInterval(waitReporter);
+    releaseHolder(waitingPath);
     releaseHolder(holderPath);
     for (const signal of cancellationSignals) process.off(signal, cancel);
   }
@@ -1847,6 +2101,8 @@ export type HostStatusHolder = HolderRecord & {
 
 export type HostStatusReport = {
   readonly availablePermits: number;
+  /** Permits lent from the overflow pool, on top of `capacity`. */
+  readonly borrowedPermits: number;
   readonly capacity: number;
   readonly generatedAt: string;
   readonly holders: readonly HostStatusHolder[];
@@ -1896,8 +2152,11 @@ export function hostStatusReport(options: {
   });
   const usedPermits = Math.min(
     capacity,
-    holders.reduce((sum, holder) => sum + holder.permits, 0),
+    holders.filter((holder) => holder.pool !== "overflow").reduce((sum, holder) => sum + holder.permits, 0),
   );
+  const borrowedPermits = holders
+    .filter((holder) => holder.pool === "overflow")
+    .reduce((sum, holder) => sum + holder.permits, 0);
   const laneLimits = new Map<CapabilityLane, number | null>([
     ["compute", null],
     ...capabilityProfile.capacities.map((entry) => [entry.resource as CapabilityLane, entry.limit] as const),
@@ -1911,6 +2170,7 @@ export function hostStatusReport(options: {
   }));
   return {
     availablePermits: Math.max(0, capacity - usedPermits),
+    borrowedPermits,
     capacity,
     generatedAt: now.toISOString(),
     holders,
@@ -1925,7 +2185,7 @@ export function hostStatusReport(options: {
 
 export function formatHostStatus(report: HostStatusReport): string {
   const lines = [
-    `CAPACITY\tcpu=${report.usedPermits}/${report.capacity}\tavailable=${report.availablePermits}\tcores=${report.hostParallelism}\tprofile=${report.profileId}`,
+    `CAPACITY\tcpu=${report.usedPermits}/${report.capacity}\tavailable=${report.availablePermits}\tcores=${report.hostParallelism}\tprofile=${report.profileId}\tborrowed=${report.borrowedPermits}`,
     ...report.lanes.map((lane) =>
       `LANE\t${lane.resource}\tactive=${lane.activeCount}\tlimit=${lane.limit === null ? "cpu-permits" : String(lane.limit)}`),
   ];
@@ -1934,7 +2194,8 @@ export function formatHostStatus(report: HostStatusReport): string {
   } else {
     for (const holder of report.holders) {
       lines.push(
-        `HOLDER\tpid=${holder.pid}\tlane=${holder.lane}\tmode=${holder.mode}\tpermits=${holder.permits}\theld=${holder.heldText}\tlabel=${holder.label}`,
+        `HOLDER\tpid=${holder.pid}\tlane=${holder.lane}\tmode=${holder.mode}\tpermits=${holder.permits}\theld=${holder.heldText}\tlabel=${holder.label}`
+        + (holder.pool === "overflow" ? "\tpool=overflow" : ""),
       );
     }
   }

@@ -202,6 +202,23 @@ host-run prints each holder's label, pid, and age every minute.
 CPU capacity is weighted permits: 6 on hosts with 16 or more cores, 4 on 12–15,
 3 on 6–11, 2 on 3–5, 1 below that.
 
+A permit stands for cores / capacity cores, but a holder can sit nearly idle
+for hours (a soak, an emulator, a dev loop). So when every permit is held, a
+`shared` or `heavy` run that has waited 20 seconds may borrow permits from a
+second pool of the same size. host-run measures the host every 15 seconds
+and lends only while it has room: the cores the run would use, plus 20% of
+all cores, were idle since the last measurement, and at least 25% of memory
+is free. A loan admitted in
+the last 90 seconds counts at its full share until the measurement includes
+it. The run keeps its place in the ordinary queue until a loan admits it, and
+the admission message says `on borrowed permits`. An `exclusive` run never
+borrows; a run that takes every CPU permit also takes every borrowed permit
+before it starts, so it still runs alone, and no new loan starts while it
+waits, so later runs cannot overtake it. `--status` shows `borrowed=N` and
+marks each borrowing holder `pool=overflow`; telemetry records
+`pool: "overflow"`. Set `LOCAL_EFFICIENCY_LENDING=off` to wait for ordinary
+permits only.
+
 Inside a lease host-run sets `HRA_JOBS`, `CARGO_BUILD_JOBS`,
 `NEXTEST_TEST_THREADS`, `RAYON_NUM_THREADS`, and `MAKEFLAGS=-jN` to
 permits x cores / capacity when they are unset, and `RUSTC_WRAPPER=sccache`
@@ -336,7 +353,8 @@ move.
   is under `minFreeGiB` (default 60) or the cache exceeds `cacheGiB`
   (default 80).
 - **Remote scheduling.** The command runs under the remote's own
-  `host-run --lane=compute` with the same mode, label and max hold, and holds
+  `host-run --lane=compute` with the same mode, label and max hold (an hour
+  when the run names none), and holds
   its CI machine lock shared when one is configured. It runs as a background
   child of the ssh session, not in the GUI session, at `nice` 10, so the
   remote's own work and CI come first. Background QoS (`taskpolicy -b`) is not
@@ -356,6 +374,14 @@ move.
   the remote cannot prepare the workspace, the command runs here with one
   line: `[host-run] running LABEL on this Mac: REASON`. A command that
   started on the remote never reruns here.
+- **Long runs stay here.** A run whose `--max-hold` is over an hour, or
+  `none`, runs on this Mac with one line:
+  `[host-run] keeping LABEL on this Mac: REASON`. A forwarded run holds the
+  remote's CI machine lock for its whole run, so a soak there could keep CI
+  steps that need that Mac to themselves waiting for hours. With `--remote`,
+  host-run refuses such a run (exit 69) instead. A forwarded run that names
+  no hold is stopped after an hour there; give a longer run `--max-hold` or
+  `--local`.
 
 Pass `--local` to keep a heavy run on this Mac when it needs this Mac: its
 outputs are used here (a binary to install or run, an app bundle, files
