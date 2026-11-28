@@ -85,6 +85,7 @@ describe("idle-permit lending decision", () => {
 
   test("settings come from defaults, test timings, or are off", () => {
     expect(lendingConfig({})).toEqual(defaultLendingConfig);
+    expect(defaultLendingConfig.graceMilliseconds).toBe(5_000);
     expect(lendingConfig({ LOCAL_EFFICIENCY_LENDING: "off" })).toBeNull();
     expect(lendingConfig({ LOCAL_EFFICIENCY_LENDING_GRACE_MS: "50", LOCAL_EFFICIENCY_LENDING_POLL_MS: "5" }))
       .toEqual({ ...defaultLendingConfig, graceMilliseconds: 50 });

@@ -204,7 +204,7 @@ CPU capacity is weighted permits: 6 on hosts with 16 or more cores, 4 on 12–15
 
 A permit stands for cores / capacity cores, but a holder can sit nearly idle
 for hours (a soak, an emulator, a dev loop). So when every permit is held, a
-`shared` or `heavy` run that has waited 20 seconds may borrow permits from a
+`shared` or `heavy` run that has waited 5 seconds may borrow permits from a
 second pool of the same size. host-run measures the host every 15 seconds
 and lends only while it has room: the cores the run would use, plus 20% of
 all cores, were idle since the last measurement, and at least 25% of memory
