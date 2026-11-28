@@ -1356,7 +1356,11 @@ describe("presence-aware heavy compute (fixture presence, fake ssh)", () => {
       const busy = Number(readFileSync(`${report}.busy`, "utf8"));
       const normal = Number(readFileSync(`${report}.idle`, "utf8"));
       expect(busy, run.stderr()).toBeLessThan(10);
-      expect(normal).toBeGreaterThan(busy);
+      // A child cannot rise above the priority it inherits. When this whole
+      // suite already runs at background priority (an outer host-run while the
+      // owner is busy), the log line above is all the run can show.
+      const inherited = Number(Bun.spawnSync(["sh", "-c", "ps -o pri= -p $$"]).stdout.toString());
+      if (inherited >= 10) expect(normal).toBeGreaterThan(busy);
     } finally {
       rmSync(f.root, { force: true, recursive: true });
     }

@@ -372,6 +372,12 @@ move.
   the remote cannot prepare the workspace, the command runs here with one
   line: `[host-run] running LABEL on this Mac: REASON`. A command that
   started on the remote never reruns here.
+- **Long runs stay here.** A run whose `--max-hold` is over an hour, or
+  `none`, runs on this Mac with one line:
+  `[host-run] keeping LABEL on this Mac: REASON`. A forwarded run holds the
+  remote's CI machine lock for its whole run, so a soak there could keep CI
+  steps that need that Mac to themselves waiting for hours. With `--remote`,
+  host-run refuses such a run (exit 69) instead.
 
 Pass `--local` to keep a heavy run on this Mac when it needs this Mac: its
 outputs are used here (a binary to install or run, an app bundle, files

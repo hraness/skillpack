@@ -43,6 +43,7 @@ import {
   type RemoteForwardConfig,
   RemoteUnreachableError,
   defaultForwardDependencies,
+  defaultRemoteHoldMilliseconds,
   forwardMacUiRun,
   forwardUnavailableExitCode,
   resolveRemoteConfigs,
@@ -1388,6 +1389,17 @@ export async function runHostCommand(options: HostRunOptions): Promise<number> {
   return await runHere(options, environment, forwarded, watch);
 }
 
+/**
+ * Whether a run with this `--max-hold` may be forwarded: at most the hour a
+ * forwarded run gets when it names none. A forwarded run holds the other
+ * Mac's CI machine lock for its whole run, so a soak there would keep CI
+ * steps that need that Mac to themselves waiting for hours.
+ */
+export function forwardsHold(maxHoldMilliseconds: number | null | undefined): boolean {
+  return maxHoldMilliseconds === undefined
+    || (maxHoldMilliseconds !== null && maxHoldMilliseconds <= defaultRemoteHoldMilliseconds);
+}
+
 function forwardRequest(options: HostRunOptions): ForwardRequest {
   return {
     artifacts: options.artifacts ?? [],
@@ -1424,11 +1436,23 @@ type ComputePlacement =
  */
 async function placeHeavyCompute(options: HostRunOptions, environment: NodeJS.ProcessEnv): Promise<ComputePlacement> {
   const remote = resolveRemoteConfigs(environment);
-  const compute: ComputeForwardConfig | null = remote.compute !== null
+  const configured: ComputeForwardConfig | null = remote.compute !== null
     && (options.mode === "heavy" || options.mode === "exclusive")
     && remote.compute.modes.includes(options.mode)
     ? remote.compute
     : null;
+  const longRun = configured !== null && options.local !== true && !forwardsHold(options.maxHoldMilliseconds);
+  if (longRun) {
+    const limit = options.maxHoldMilliseconds == null
+      ? "with no time limit"
+      : `for up to ${formatDuration(options.maxHoldMilliseconds)}`;
+    const why = `it may run ${limit}, and a forwarded run holds ${configured.forwardTo}'s CI machine lock for its whole run`;
+    if (options.remote === true) {
+      throw new ForwardUnavailableError(`${options.label} was not forwarded: ${why}. Run it here with --local, or pass --max-hold=60m or less`);
+    }
+    console.error(`[host-run] keeping ${options.label} on this Mac: ${why}; host-run forwards runs of an hour or less`);
+  }
+  const compute = longRun ? null : configured;
   const deps = defaultForwardDependencies(environment);
   const forward = async (): Promise<ComputePlacement | null> => {
     if (compute === null) return null;
