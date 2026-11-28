@@ -19,6 +19,7 @@ import {
   macNativeClaimAmount,
   macNativeProfile,
   macUiProfile,
+  overflowProfile,
   resolveMacNativeStateRoot,
   resolveMacUiStateRoot,
   chromeEnvironment,
@@ -1067,7 +1068,7 @@ describe("host-wide resource wrapper", () => {
         import { appendFileSync, closeSync, openSync, unlinkSync, writeFileSync } from "node:fs";
         export function createHostResourceCoordinator(options) {
           return { async withLease(claims, callback) {
-            const resource = claims[0].resource;
+            const resource = claims[0].resource + (options.profile.id.includes("overflow") ? "-overflow" : "");
             const path = ${JSON.stringify(root)} + "/" + resource + ".lock";
             appendFileSync(${JSON.stringify(log)}, JSON.stringify({ profile: options.profile, stateRoot: options.stateRoot, claims }) + "\\n");
             writeFileSync(path, JSON.stringify({
@@ -1087,7 +1088,8 @@ describe("host-wide resource wrapper", () => {
           const root = ${JSON.stringify(root)};
           if (!existsSync(root + "/mac-native.lock") || !existsSync(root + "/cpu.lock")) process.exit(20);
           const entries = readFileSync(${JSON.stringify(log)}, "utf8").trim().split("\\n").map(JSON.parse);
-          if (entries.length !== 2 || entries[0].claims[0].resource !== "mac-native" || entries[1].claims[0].amount !== ${fullCpu ? permitCapacity() : Math.min(2, permitCapacity())}) process.exit(21);
+          if (entries.length !== ${fullCpu ? 3 : 2} || entries[0].claims[0].resource !== "mac-native" || entries[1].claims[0].amount !== ${fullCpu ? permitCapacity() : Math.min(2, permitCapacity())}) process.exit(21);
+          if (${fullCpu} && !existsSync(root + "/cpu-overflow.lock")) process.exit(22);
           await Bun.write(${JSON.stringify(childMarker)}, "ran");
         `;
         const result = Bun.spawnSync({
@@ -1108,6 +1110,14 @@ describe("host-wide resource wrapper", () => {
         expect(entries[0].claims).toEqual([{ resource: "mac-native", amount: 2 }]);
         expect(entries[1].profile).toEqual({ id: `local-efficiency/v1-${permitCapacity()}`, capacities: [{ resource: "cpu", limit: permitCapacity() }] });
         expect(entries[1].claims).toEqual([{ resource: "cpu", amount: fullCpu ? permitCapacity() : Math.min(2, permitCapacity()) }]);
+        // A whole-machine run also takes every borrowed permit, so no loan runs beside it.
+        expect(entries.length).toBe(fullCpu ? 3 : 2);
+        if (fullCpu) {
+          expect(entries[2].profile).toEqual(overflowProfile(permitCapacity()));
+          expect(entries[2].stateRoot).toBe(join(root, "state", `cpu-overflow-v1-${permitCapacity()}`));
+          expect(entries[2].claims).toEqual([{ resource: "cpu", amount: permitCapacity() }]);
+        }
+        expect(existsSync(join(root, "cpu-overflow.lock"))).toBe(false);
         rmSync(childMarker);
       }
       for (const { fullCpu, forged } of [{ fullCpu: false, forged: false }, { fullCpu: true, forged: false }, { fullCpu: true, forged: true }]) {

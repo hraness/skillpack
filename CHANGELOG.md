@@ -1,5 +1,19 @@
 # Changelog
 
+## local-efficiency 0.13.0 - 2026-11-28
+
+- host-run lends idle CPU permits. When every permit is held, a `shared` or
+  `heavy` run that has waited 20 seconds may borrow permits from a second
+  pool of the same size, while the cores it would use plus 20% of all cores
+  are idle and at least 25% of memory is free. Before this, long, mostly idle
+  holders such as soaks and emulators could keep every other run on the host
+  queued while most cores sat idle.
+- An `exclusive` run never borrows, and a run that takes every CPU permit
+  waits for borrowed permits to come back before it starts.
+- `--status` shows `borrowed=N` and `pool=overflow`; telemetry records
+  `pool: "overflow"` for a borrowed run. `LOCAL_EFFICIENCY_LENDING=off` turns
+  lending off for a run.
+
 ## local-efficiency 0.12.0 - 2026-11-27
 
 - `disk-reclaim` drops the legacy `oh reclaim` pass; the `oh` CLI is being
