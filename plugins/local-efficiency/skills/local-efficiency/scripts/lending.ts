@@ -28,7 +28,9 @@ export type LendingConfig = {
 };
 
 export const defaultLendingConfig: LendingConfig = Object.freeze({
-  graceMilliseconds: 20_000,
+  // Long, nearly idle holders can keep the pool full for hours, so every waiting run pays
+  // this wait. The ramp and the core reserve, not the wait, keep loans in check.
+  graceMilliseconds: 5_000,
   minimumFreeMemoryFraction: 0.25,
   pollMilliseconds: 15_000,
   rampMilliseconds: 90_000,

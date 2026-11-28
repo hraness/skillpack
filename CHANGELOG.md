@@ -1,5 +1,13 @@
 # Changelog
 
+## local-efficiency 0.13.1 - 2026-11-28
+
+- A run now waits 5 seconds instead of 20 before it may borrow idle CPU
+  permits, so a host whose permits are held by long, nearly idle runs admits
+  new work sooner. The room check is unchanged: the cores the run would use
+  plus 20% of all cores must be idle, at least 25% of memory must be free,
+  and a loan from the last 90 seconds still counts at its full share.
+
 ## local-efficiency 0.13.0 - 2026-11-28
 
 - host-run lends idle CPU permits. When every permit is held, a `shared` or
